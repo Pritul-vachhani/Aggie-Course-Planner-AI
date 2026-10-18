@@ -626,6 +626,19 @@ Students should verify degree requirements, prerequisites, GE requirements, and 
 
 ---
 
+1. What Should the Final Product Do?
+By the end of Week 6, a student should be able to:
+1. Open the AggieAI website.
+2. Enter their academic interests, such as AI, psychology, music, or business.
+3. Select remaining GE requirements.
+4. Specify preferred units and optionally completed courses.
+5. Ask natural-language questions about courses.
+6. Receive five personalized course recommendations.
+7. See explanations for why each course was recommended.
+8. View course details, including units, GE categories, and prerequisites.
+9. Ask follow-up questions about recommended courses.
+
+---
 # Contributors
 
 MLSN Project Team
