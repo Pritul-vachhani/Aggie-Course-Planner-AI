@@ -7,6 +7,20 @@ from app.config import CATALOG_PATH
 ENDED_MARKER = "This version has ended; see updated course, below."
 GE_PATTERN = re.compile(r"General Education:\s*(.*?)\.(?:\n|$)")
 
+# GE categories, keyed by catalog abbreviation
+GE_CATEGORIES = {
+    "AH": "Arts & Humanities",
+    "SE": "Science & Engineering",
+    "SS": "Social Sciences",
+    "WE": "Writing Experience",
+    "WC": "World Cultures",
+    "VL": "Visual Literacy",
+    "OL": "Oral Skills",
+    "SL": "Scientific Literacy",
+    "QL": "Quantitative Literacy",
+    "DD": "Domestic Diversity",
+    "ACGH": "American Cultures, Governance, & History",
+}
 
 def _clean(text: str) -> str:
     """Scraped text uses non-breaking spaces in places; make them normal."""
@@ -21,7 +35,11 @@ def _parse_ge(details: str) -> list[str]:
     match = GE_PATTERN.search(details or "")
     if not match:
         return []
-    return [part.strip() for part in match.group(1).split(";") if part.strip()]
+    text = match.group(1)
+    return [
+        name for code, name in GE_CATEGORIES.items()
+        if name in text or f"({code})" in text
+    ]
 
 
 def _to_course(raw: dict, department: str) -> dict:
