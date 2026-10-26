@@ -88,7 +88,7 @@ export default function PreferenceForm() {
 
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-semibold text-black mb-1">Remaining GE</label>
+            <label className="block text-sm font-semibold text-black mb-1">GE</label>
             <select 
               value={ge}
               onChange={(e) => setGe(e.target.value)}
