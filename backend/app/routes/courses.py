@@ -1,20 +1,20 @@
 from typing import List
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from app.schemas.course import Course
-from app.services.mock_data import MOCK_COURSES
+from app.services.catalog import load_catalog, get_course
 
 router = APIRouter(prefix="/courses", tags=["courses"])
 
-def normalize(code: str) -> str:
-    return code.replace(" ", "").lower()
 
 @router.get("/", response_model=List[Course])
-def get_courses():
-    return MOCK_COURSES
+def list_courses(limit: int = Query(50, ge=1, le=500), offset: int = Query(0, ge=0)):
+    courses = list(load_catalog().values())
+    return courses[offset: offset + limit]
+
 
 @router.get("/{course_code}", response_model=Course)
-def get_course(course_code: str):
-    for course in MOCK_COURSES:
-        if normalize(course["course_code"]) == normalize(course_code):
-            return course
-    raise HTTPException(status_code=404, detail="Course not found")
+def read_course(course_code: str):
+    course = get_course(course_code)
+    if course is None:
+        raise HTTPException(status_code=404, detail="Course not found")
+    return course
