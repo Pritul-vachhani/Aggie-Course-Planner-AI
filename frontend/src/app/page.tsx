@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 type CourseCardProps = {
   title: string;
@@ -8,6 +8,52 @@ type CourseCardProps = {
   explanation: string;
   units: string | number;
 };
+
+type Recommendation = {
+  course: {
+    course_code: string;
+    title: string;
+    description: string;
+    units: string;
+  };
+  match_score: number;
+  reasons: string[];
+};
+
+type RecommendationRequest = {
+  interests: string;
+  top_k: number;
+  remaining_ge?: string[];
+  completed_courses?: string[];
+};
+
+type CatalogCourse = {
+  course_code: string;
+};
+
+function matchesStudentLevel(courseCode: string, studentLevel: string) {
+  if (studentLevel === 'Any') return true;
+
+  const courseNumber = Number(courseCode.trim().split(/\s+/)[1]?.match(/^\d+/)?.[0]);
+  if (!Number.isFinite(courseNumber)) return false;
+
+  return studentLevel === 'Graduate' ? courseNumber >= 200 : courseNumber < 200;
+}
+
+function matchesUnits(courseUnits: string, selectedUnits: string) {
+  if (selectedUnits === 'Any') return true;
+
+  const unitValues = courseUnits.match(/\d+/g)?.map(Number) ?? [];
+  const requestedUnits = Number(selectedUnits);
+
+  if (unitValues.length === 1) return unitValues[0] === requestedUnits;
+  if (unitValues.length >= 2) {
+    const [minimum, maximum] = unitValues;
+    return requestedUnits >= minimum && requestedUnits <= maximum;
+  }
+
+  return false;
+}
 
 // Polished, ranked Course Card with hover effects and Aggie colors
 function CourseCard({ title, rank, explanation, units }: CourseCardProps) {
@@ -40,14 +86,49 @@ export default function Home() {
   const [interests, setInterests] = useState('');
   const [ge, setGe] = useState('Any');
   const [units, setUnits] = useState('Any');
-  const [major, setMajor] = useState('Any');
+  const [studentLevel, setStudentLevel] = useState('Any');
+  const [coursePrefix, setCoursePrefix] = useState('');
+  const [coursePrefixes, setCoursePrefixes] = useState<string[]>([]);
   const [completed, setCompleted] = useState('');
 
   // Results State
-  const [recommendations, setRecommendations] = useState<any[]>([]);
+  const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    const fetchCoursePrefixes = async () => {
+      try {
+        const courses: CatalogCourse[] = [];
+        const pageSize = 500;
+        let offset = 0;
+
+        while (true) {
+          const response = await fetch(`http://localhost:8000/courses/?limit=${pageSize}&offset=${offset}`);
+          if (!response.ok) {
+            throw new Error(`Could not load courses (${response.status}).`);
+          }
+
+          const page: CatalogCourse[] = await response.json();
+          courses.push(...page);
+          if (page.length < pageSize) break;
+          offset += pageSize;
+        }
+
+        const prefixes = new Set(
+          courses
+            .map((course) => course.course_code.trim().split(/\s+/)[0]?.slice(0, 3).toUpperCase())
+            .filter((prefix): prefix is string => Boolean(prefix))
+        );
+        setCoursePrefixes([...prefixes].sort());
+      } catch (err) {
+        console.error('Error loading course prefixes:', err);
+      }
+    };
+
+    fetchCoursePrefixes();
+  }, []);
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -59,14 +140,13 @@ export default function Home() {
     setRecommendations([]);
 
     try {
-      const payload: Record<string, any> = {
-        interests: [interests]
+      const payload: RecommendationRequest = {
+        interests: interests.trim(),
+        top_k: 20
       };
 
       // Keys must match StudentProfile in backend/app/schemas/recommend.py
       if (ge !== 'Any') payload.remaining_ge = [ge];
-      if (units !== 'Any') payload.preferred_units = parseInt(units, 10);
-      if (major !== 'Any') payload.major = major;
       if (completed.trim() !== '') {
         payload.completed_courses = completed.split(',').map((c) => c.trim()).filter(Boolean);
       }
@@ -78,19 +158,36 @@ export default function Home() {
       });
 
       if (!response.ok) {
-        throw new Error(`Backend Error: ${response.status}`);
+        const errorData = await response.json();
+        const details = JSON.stringify(errorData.detail ?? errorData);
+        throw new Error(`Backend Error ${response.status}: ${details}`);
       }
 
-      const data = await response.json();
+      const data: { recommendations: Recommendation[] } = await response.json();
       // Backend returns { recommendations: [{ course, match_score, reasons }] }
-      setRecommendations((data.recommendations ?? []).slice(0, 5)); // Enforce top 5 limit as per project specs
+      setRecommendations(data.recommendations ?? []);
     } catch (err) {
-      console.error(err);
-      setError('AggieAI is currently offline or encountered an error. Please ensure the FastAPI backend is running.');
+      setError(err instanceof Error ? err.message : 'An unexpected error occurred.');
     } finally {
       setIsLoading(false);
     }
   };
+
+  const filteredRecommendations = recommendations
+    .filter((recommendation) =>
+      recommendation.course.course_code
+        .trim()
+        .split(/\s+/)[0]
+        .toUpperCase()
+        .startsWith(coursePrefix)
+    )
+    .filter((recommendation) =>
+      matchesStudentLevel(recommendation.course.course_code, studentLevel)
+    )
+    .filter((recommendation) =>
+      matchesUnits(recommendation.course.units, units)
+    )
+    .slice(0, 5);
 
   return (
     <main className="min-h-screen bg-[#f8f9fa] font-sans selection:bg-[#B3A369] selection:text-[#022851]">
@@ -147,25 +244,44 @@ export default function Home() {
                     onChange={(e) => setUnits(e.target.value)}
                   >
                     <option value="Any">Any</option>
-                    <option value="3">3 Units</option>
-                    <option value="4">4 Units</option>
-                    <option value="5">5 Units</option>
+                    <option value="1">1 Unit</option>
+                    <option value="2">2 Units</option>
+                    <option value="6">6 Units</option>
                   </select>
                 </div>
               </div>
 
               <div>
-                <label className="block text-sm font-bold text-gray-700 mb-2">Major Constraints</label>
-                <select 
+                <label htmlFor="student-level" className="block text-sm font-bold text-gray-700 mb-2">Student Level</label>
+                <select
+                  id="student-level"
                   className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3.5 text-sm focus:bg-white focus:ring-2 focus:ring-[#B3A369]/50 outline-none cursor-pointer"
-                  value={major}
-                  onChange={(e) => setMajor(e.target.value)}
+                  value={studentLevel}
+                  onChange={(e) => setStudentLevel(e.target.value)}
                 >
-                  <option value="Any">Any Subject</option>
-                  <option value="Cognitive Science">Cognitive Science</option>
-                  <option value="Data Science">Data Science</option>
-                  <option value="Computer Science">Computer Science</option>
+                  <option value="Any"></option>
+                  <option value="Undergraduate">Undergraduate</option>
+                  <option value="Graduate">Graduate</option>
                 </select>
+              </div>
+
+              <div>
+                <label htmlFor="course-prefix" className="block text-sm font-bold text-gray-700 mb-2">Course Prefix (optional)</label>
+                <input
+                  id="course-prefix"
+                  list="course-prefix-options"
+                  maxLength={3}
+                  autoCapitalize="characters"
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3.5 text-sm uppercase focus:bg-white focus:ring-2 focus:ring-[#B3A369]/50 outline-none"
+                  placeholder="Type or select (e.g., ECS)"
+                  value={coursePrefix}
+                  onChange={(e) => setCoursePrefix(e.target.value.replace(/[^a-z]/gi, '').slice(0, 3).toUpperCase())}
+                />
+                <datalist id="course-prefix-options">
+                  {coursePrefixes.map((prefix) => (
+                    <option key={prefix} value={prefix} />
+                  ))}
+                </datalist>
               </div>
 
               <div>
@@ -234,14 +350,14 @@ export default function Home() {
           )}
 
           {/* State 4: Results Rendering */}
-          {!isLoading && !error && hasSearched && recommendations.length > 0 && (
+          {!isLoading && !error && hasSearched && filteredRecommendations.length > 0 && (
             <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
               <div className="flex items-center justify-between mb-6">
                 <h3 className="text-xl font-bold text-gray-900">Top 5 Matches</h3>
                 <span className="text-sm font-semibold text-[#B3A369]">Powered by all-MiniLM-L6-v2</span>
               </div>
               
-              {recommendations.map((rec, index) => (
+              {filteredRecommendations.map((rec, index) => (
                 <CourseCard
                   key={rec.course?.course_code ?? index}
                   rank={index + 1}
@@ -254,7 +370,7 @@ export default function Home() {
           )}
 
           {/* State 5: No Results Found */}
-          {!isLoading && !error && hasSearched && recommendations.length === 0 && (
+          {!isLoading && !error && hasSearched && filteredRecommendations.length === 0 && (
             <div className="text-center py-20 bg-white rounded-3xl border border-gray-100">
               <span className="text-4xl mb-4 block">🔍</span>
               <h3 className="text-lg font-bold text-gray-900">No perfect matches found.</h3>
