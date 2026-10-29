@@ -4,33 +4,47 @@ from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 import re
 
-#Filtering based on interest phrase and recommender 
 class CourseRecommender:
     def __init__(self, data: pd.DataFrame, model_name="all-MiniLM-L6-v2"):
+        """input: dataframe where each row is a course
+        Output: initializes the model"""
         self.data = data.reset_index(drop=True)
         self.model = SentenceTransformer(model_name)          # loaded once
         text = self.data["title"] + ". " + self.data["description"].fillna("")
         self.embeddings = self.model.encode(text.tolist())    # computed once
 
     def interest_scores(self, phrase: str):
+        """Input: An interest phrase
+        Output: A list of values from one to zero with one meaning it is close to the phrase. Each value reperest a class
+        Note: Don't use this fucntion, this function is a helper function for recommender"""
         phrase_emb = self.model.encode([phrase])              # only per-request work
         sim = cosine_similarity(phrase_emb, self.embeddings)[0]
         return np.clip(sim, 0, 1)
-
+    
+    def get_course_level(self, course_level:int):
+        """Input: A dataframe where each row is a course
+        Output: Changes self.data to only have only have right course level
+        Note: 0 = Lower Division, 1 = Upper Division, 2 = Graduate Courses, 
+        3 = Professional Courses for Teachers and Health Providers, 4 = Professional Graduate Training"""
+        mask = np.array([code[4] == str(course_level) for code in self.data["course_code"]])
+        self.data = self.data[mask].reset_index(drop=True)
+        self.embeddings = self.embeddings[mask]
+        
     def recommend(self, interest_phrase: str, units: float,
-                  ge_category: list[str], prereqs: list[str], top_n: int = 3):
+                  ge_category: list[str], prereqs: list[str], subject:str, top_n: int = 3):
         score_prereqs = np.array(filter_by_prereqs(self.data, prereqs), dtype=float)
         score_units = np.array(filter_by_units(self.data, units))
         score_interest = self.interest_scores(interest_phrase)
+        score_subject = np.array(filter_subject(self.data, subject))
         score_ge = np.array(filter_by_ge(self.data, ge_category)) if ge_category else np.ones(len(self.data))
-        final = score_ge * 0.25 + score_interest * 0.3 + score_units * 0.15 + score_prereqs * 0.3
+        final = score_ge * 0.2 + score_interest * 0.25 + score_units * 0.2 + score_prereqs * 0.2 + score_subject * 0.15
 
         top_idx = np.argsort(final)[::-1][:top_n]
         return [
             {
                 "course_code": self.data.at[i, "course_code"],
                 "title": self.data.at[i, "title"],
-                "score": float(final[i]),   # numpy float -> plain float for JSON
+                "score": float(final[i]),   
             }
             for i in top_idx
         ]
@@ -91,10 +105,10 @@ def filter_by_prereqs(data, completed):
         templist.append(can_take(prereq_text, completed))
     return templist
 
-#Filtering for Units
+#Filter by units
 def filter_by_units(data, preferred_units: int = None, max_diff = 3):
     """Input: A data frame where each row is a course and there is a column called "units_average", 
-    and the preferred units (if units = -1 that means any units are ok)"""
+    and the preferred units (if units = None that means any units are ok)"""
     if preferred_units == None:
         return [1] * len(data)
     else:
@@ -105,4 +119,20 @@ def filter_by_units(data, preferred_units: int = None, max_diff = 3):
                 continue
             score = max(0, 1 - abs(course_units - preferred_units) / max_diff)
             templist.append(score)
+        return templist
+
+#Filtering for subject
+def filter_subject(data, subject:str):
+    """Input: A dataframe where each row is a course
+    Outpu: List where each index representa a course, 1 it has the correct subject and 0 it doesn't"""
+    if subject == None:
+        return np.ones(len(data))
+    else:
+        subject = subject.strip().upper()
+        templist = []
+        for i in data["course_code"].to_numpy():
+            if i[:3] in subject:
+                templist.append(1)
+            else:
+                templist.append(0)
         return templist
