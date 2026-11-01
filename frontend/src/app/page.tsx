@@ -7,6 +7,8 @@ type CourseCardProps = {
   rank: number;
   explanation: string;
   units: string | number;
+  prerequisites: string;
+  geCategories: string[];
 };
 
 type Recommendation = {
@@ -15,6 +17,8 @@ type Recommendation = {
     title: string;
     description: string;
     units: string;
+    prerequisites: string;
+    ge_categories: string[];
   };
   match_score: number;
   reasons: string[];
@@ -29,6 +33,33 @@ type RecommendationRequest = {
 
 type CatalogCourse = {
   course_code: string;
+  title: string;
+  description: string;
+  units: string;
+  prerequisites: string;
+  ge_categories: string[];
+};
+
+type AppliedFilters = {
+  ge: string;
+  units: string;
+  studentLevel: string;
+  coursePrefix: string;
+  completedCodes: string[];
+};
+
+const GE_ABBREVIATIONS: Record<string, string> = {
+  'Arts & Humanities': 'AH',
+  'Science & Engineering': 'SE',
+  'Social Sciences': 'SS',
+  'American Cultures, Governance, & History': 'ACGH',
+  'Domestic Diversity': 'DD',
+  'Oral Skills': 'OL',
+  'Quantitative Literacy': 'QL',
+  'Scientific Literacy': 'SL',
+  'Visual Literacy': 'VL',
+  'World Cultures': 'WC',
+  'Writing Experience': 'WE',
 };
 
 function matchesStudentLevel(courseCode: string, studentLevel: string) {
@@ -37,26 +68,50 @@ function matchesStudentLevel(courseCode: string, studentLevel: string) {
   const courseNumber = Number(courseCode.trim().split(/\s+/)[1]?.match(/^\d+/)?.[0]);
   if (!Number.isFinite(courseNumber)) return false;
 
-  return studentLevel === 'Graduate' ? courseNumber >= 200 : courseNumber < 200;
+  if (studentLevel === 'Lower division undergraduate') {
+    return courseNumber >= 1 && courseNumber < 100;
+  }
+  if (studentLevel === 'Upper division undergraduate') {
+    return courseNumber >= 100 && courseNumber < 200;
+  }
+  return courseNumber >= 200;
 }
 
 function matchesUnits(courseUnits: string, selectedUnits: string) {
   if (selectedUnits === 'Any') return true;
 
-  const unitValues = courseUnits.match(/\d+/g)?.map(Number) ?? [];
   const requestedUnits = Number(selectedUnits);
+  const fixedUnits = Number(courseUnits);
+  if (Number.isFinite(fixedUnits)) return fixedUnits === requestedUnits;
 
-  if (unitValues.length === 1) return unitValues[0] === requestedUnits;
-  if (unitValues.length >= 2) {
-    const [minimum, maximum] = unitValues;
-    return requestedUnits >= minimum && requestedUnits <= maximum;
+  const range = courseUnits.match(/^\s*(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)\s*$/);
+  if (!range) return false;
+
+  const minimum = Number(range[1]);
+  const maximum = Number(range[2]);
+  return requestedUnits >= minimum && requestedUnits <= maximum;
+}
+
+function matchesOptionalFilters(
+  course: Recommendation['course'],
+  filters: {
+    ge: string;
+    units: string;
+    studentLevel: string;
+    coursePrefix: string;
   }
-
-  return false;
+) {
+  return (
+    (!filters.coursePrefix ||
+      course.course_code.trim().split(/\s+/)[0].toUpperCase().startsWith(filters.coursePrefix)) &&
+    matchesStudentLevel(course.course_code, filters.studentLevel) &&
+    matchesUnits(course.units, filters.units) &&
+    (filters.ge === 'Any' || course.ge_categories.includes(filters.ge))
+  );
 }
 
 // Polished, ranked Course Card with hover effects and Aggie colors
-function CourseCard({ title, rank, explanation, units }: CourseCardProps) {
+function CourseCard({ title, rank, explanation, units, prerequisites, geCategories }: CourseCardProps) {
   return (
     <article className="bg-white rounded-2xl shadow-sm hover:shadow-lg transition-all duration-300 border border-gray-100 p-6 flex gap-5 relative overflow-hidden group">
       {/* Decorative left border on hover */}
@@ -76,6 +131,20 @@ function CourseCard({ title, rank, explanation, units }: CourseCardProps) {
           </span>
         </div>
         <p className="text-gray-600 leading-relaxed text-sm">{explanation}</p>
+        <div className="mt-4">
+          <h5 className="text-sm font-bold text-gray-800">GE fulfilled</h5>
+          <p className="mt-1 text-sm text-gray-600">
+            {geCategories.length > 0
+              ? geCategories.map((category) => `${category} (${GE_ABBREVIATIONS[category] ?? category})`).join(', ')
+              : 'None listed'}
+          </p>
+        </div>
+        <div className="mt-4 border-t border-gray-100 pt-3">
+          <h5 className="text-sm font-bold text-gray-800">Prerequisites</h5>
+          <p className="mt-1 text-sm text-gray-600">
+            {prerequisites.trim() || 'None listed'}
+          </p>
+        </div>
       </div>
     </article>
   );
@@ -89,10 +158,18 @@ export default function Home() {
   const [studentLevel, setStudentLevel] = useState('Any');
   const [coursePrefix, setCoursePrefix] = useState('');
   const [coursePrefixes, setCoursePrefixes] = useState<string[]>([]);
+  const [catalogCourses, setCatalogCourses] = useState<CatalogCourse[]>([]);
   const [completed, setCompleted] = useState('');
 
   // Results State
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
+  const [appliedFilters, setAppliedFilters] = useState<AppliedFilters>({
+    ge: 'Any',
+    units: 'Any',
+    studentLevel: 'Any',
+    coursePrefix: '',
+    completedCodes: [],
+  });
   const [isLoading, setIsLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [error, setError] = useState('');
@@ -121,6 +198,7 @@ export default function Home() {
             .map((course) => course.course_code.trim().split(/\s+/)[0]?.slice(0, 3).toUpperCase())
             .filter((prefix): prefix is string => Boolean(prefix))
         );
+        setCatalogCourses(courses);
         setCoursePrefixes([...prefixes].sort());
       } catch (err) {
         console.error('Error loading course prefixes:', err);
@@ -134,6 +212,14 @@ export default function Home() {
     e.preventDefault();
     if (!interests.trim()) return;
 
+    const filters: AppliedFilters = {
+      ge,
+      units,
+      studentLevel,
+      coursePrefix: coursePrefix.trim().toUpperCase(),
+      completedCodes: completed.split(',').map((code) => code.replace(/\s+/g, '').toUpperCase()).filter(Boolean),
+    };
+    setAppliedFilters(filters);
     setIsLoading(true);
     setHasSearched(true);
     setError('');
@@ -164,8 +250,37 @@ export default function Home() {
       }
 
       const data: { recommendations: Recommendation[] } = await response.json();
-      // Backend returns { recommendations: [{ course, match_score, reasons }] }
-      setRecommendations(data.recommendations ?? []);
+      const backendRecommendations = data.recommendations ?? [];
+      const matchingRecommendations = backendRecommendations.filter((recommendation) =>
+        matchesOptionalFilters(recommendation.course, filters)
+      );
+
+      if (matchingRecommendations.length > 0) {
+        setRecommendations(backendRecommendations);
+      } else {
+        const completedCodes = new Set(filters.completedCodes);
+        const hasOptionalFilters =
+          ge !== 'Any' ||
+          units !== 'Any' ||
+          studentLevel !== 'Any' ||
+          Boolean(filters.coursePrefix) ||
+          filters.completedCodes.length > 0;
+
+        if (hasOptionalFilters) {
+          const fallbackRecommendations = catalogCourses
+            .filter((course) => !completedCodes.has(course.course_code.replace(/\s+/g, '').toUpperCase()))
+            .filter((course) => matchesOptionalFilters(course, filters))
+            .slice(0, 5)
+            .map((course): Recommendation => ({
+              course,
+              match_score: 0,
+              reasons: ['Matches your selected filters; no interest-based matches were found.'],
+            }));
+          setRecommendations(fallbackRecommendations);
+        } else {
+          setRecommendations(backendRecommendations);
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An unexpected error occurred.');
     } finally {
@@ -175,17 +290,7 @@ export default function Home() {
 
   const filteredRecommendations = recommendations
     .filter((recommendation) =>
-      recommendation.course.course_code
-        .trim()
-        .split(/\s+/)[0]
-        .toUpperCase()
-        .startsWith(coursePrefix)
-    )
-    .filter((recommendation) =>
-      matchesStudentLevel(recommendation.course.course_code, studentLevel)
-    )
-    .filter((recommendation) =>
-      matchesUnits(recommendation.course.units, units)
+      matchesOptionalFilters(recommendation.course, appliedFilters)
     )
     .slice(0, 5);
 
@@ -201,106 +306,131 @@ export default function Home() {
         </div>
       </header>
 
-      <div className="max-w-7xl mx-auto px-6 py-10 grid lg:grid-cols-12 gap-10">
+      <div className="mx-auto grid max-w-7xl grid-cols-1 items-start gap-5 px-4 py-5 lg:grid-cols-12">
         
         {/* Left Column: Configuration Panel */}
-        <div className="lg:col-span-4 space-y-6">
-          <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-8">
-            <h2 className="text-xl font-bold text-gray-900 mb-1">Design Your Quarter</h2>
-            <p className="text-sm text-gray-500 mb-8">Set your parameters and let the AI find your perfect schedule.</p>
+        <div className="lg:col-span-4">
+          <div className="rounded-3xl border border-gray-200 bg-white p-3 shadow-md shadow-[#022851]/5">
+            <h2 className="mb-1 text-lg font-bold text-[#022851]">Design Your Quarter</h2>
+            <p className="mb-3 text-xs text-gray-500">Tell AggieAI what you’re looking for.</p>
 
-            <form onSubmit={handleSearch} className="space-y-5">
+            <form id="recommendation-form" onSubmit={handleSearch} className="flex flex-col gap-2">
               <div>
-                <label className="block text-sm font-bold text-gray-700 mb-2">Academic Interests *</label>
-                <textarea 
-                  required
-                  rows={3}
-                  className="w-full bg-gray-50 border border-gray-200 rounded-xl p-4 text-sm focus:bg-white focus:ring-2 focus:ring-[#B3A369]/50 focus:border-[#B3A369] outline-none transition-all resize-none"
-                  placeholder="e.g., I want a chill class about film, cognitive psychology, or modern technology..."
-                  value={interests}
-                  onChange={(e) => setInterests(e.target.value)}
-                />
+                <div className="rounded-2xl border-2 border-[#B3A369] bg-gradient-to-br from-amber-50 to-white p-2.5 shadow-sm">
+                  <label htmlFor="academic-interests" className="mb-1 block text-sm font-bold text-gray-900">
+                    Academic Interests <span className="text-red-600" aria-label="required">*</span>
+                  </label>
+                  <p className="mb-1.5 text-xs text-gray-600">
+                    Describe the class you want to take for next quarter.
+                  </p>
+                  <textarea 
+                    id="academic-interests"
+                    required
+                    rows={4}
+                    className="min-h-24 w-full rounded-xl border border-gray-300 bg-white p-2.5 text-sm leading-5 focus:border-[#B3A369] focus:ring-2 focus:ring-[#B3A369]/50 outline-none transition-all resize-y"
+                    placeholder="For example: I need an Arts & Humanities GE, enjoy psychology and movies, and want a class with few prerequisites."
+                    value={interests}
+                    onChange={(e) => setInterests(e.target.value)}
+                  />
+                </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 content-start gap-2">
+                <h3 className="col-span-2 rounded-xl bg-gradient-to-r from-[#022851] via-[#064477] to-[#B3A369] px-3 py-1.5 text-sm font-bold tracking-wide text-white shadow-md">
+                  Advanced filters
+                </h3>
+
                 <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-2">Target GE</label>
+                  <label className="mb-1 block text-xs font-bold text-gray-700">Target GE</label>
                   <select 
-                    className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3.5 text-sm focus:bg-white focus:ring-2 focus:ring-[#B3A369]/50 outline-none cursor-pointer"
+                    className="w-full rounded-lg border border-gray-200 bg-gray-50 p-2 text-xs focus:bg-white focus:ring-2 focus:ring-[#B3A369]/50 outline-none cursor-pointer"
                     value={ge}
                     onChange={(e) => setGe(e.target.value)}
                   >
                     <option value="Any">Any GE</option>
-                    <option value="Arts & Humanities (AH)">Arts & Humanities (AH)</option>
-                    <option value="Science & Engineering (SE)">Science & Engineering (SE)</option>
-                    <option value="Social Sciences (SS)">Social Sciences (SS)</option>
+                    <option value="Arts & Humanities">Arts & Humanities (AH)</option>
+                    <option value="Science & Engineering">Science & Engineering (SE)</option>
+                    <option value="Social Sciences">Social Sciences (SS)</option>
+                    <option value="American Cultures, Governance, & History">American Cultures, Governance, & History (ACGH)</option>
+                    <option value="Domestic Diversity">Domestic Diversity (DD)</option>
+                    <option value="Oral Skills">Oral Skills (OL)</option>
+                    <option value="Quantitative Literacy">Quantitative Literacy (QL)</option>
+                    <option value="Scientific Literacy">Scientific Literacy (SL)</option>
+                    <option value="Visual Literacy">Visual Literacy (VL)</option>
+                    <option value="World Cultures">World Cultures (WC)</option>
+                    <option value="Writing Experience">Writing Experience (WE)</option>
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-2">Units</label>
+                  <label className="mb-1 block text-xs font-bold text-gray-700">Units</label>
                   <select 
-                    className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3.5 text-sm focus:bg-white focus:ring-2 focus:ring-[#B3A369]/50 outline-none cursor-pointer"
+                    className="w-full rounded-lg border border-gray-200 bg-gray-50 p-2 text-xs focus:bg-white focus:ring-2 focus:ring-[#B3A369]/50 outline-none cursor-pointer"
                     value={units}
                     onChange={(e) => setUnits(e.target.value)}
                   >
                     <option value="Any">Any</option>
                     <option value="1">1 Unit</option>
                     <option value="2">2 Units</option>
+                    <option value="3">3 Units</option>
+                    <option value="4">4 Units</option>
+                    <option value="5">5 Units</option>
                     <option value="6">6 Units</option>
                   </select>
                 </div>
+
+                <div>
+                  <label htmlFor="student-level" className="mb-1 block text-xs font-bold text-gray-700">Student Level</label>
+                  <select
+                    id="student-level"
+                    className="w-full rounded-lg border border-gray-200 bg-gray-50 p-2 text-xs focus:bg-white focus:ring-2 focus:ring-[#B3A369]/50 outline-none cursor-pointer"
+                    value={studentLevel}
+                    onChange={(e) => setStudentLevel(e.target.value)}
+                  >
+                    <option value="Any">Any level</option>
+                    <option value="Lower division undergraduate">Lower division undergraduate (001–099)</option>
+                    <option value="Upper division undergraduate">Upper division undergraduate (100–199)</option>
+                    <option value="Graduate">Graduate (200+)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label htmlFor="course-prefix" className="mb-1 block text-xs font-bold text-gray-700">Course Prefix</label>
+                  <input
+                    id="course-prefix"
+                    list="course-prefix-options"
+                    maxLength={3}
+                    autoCapitalize="characters"
+                    className="w-full rounded-lg border border-gray-200 bg-gray-50 p-2 text-xs uppercase focus:bg-white focus:ring-2 focus:ring-[#B3A369]/50 outline-none"
+                    placeholder="e.g., ECS"
+                    value={coursePrefix}
+                    onChange={(e) => setCoursePrefix(e.target.value.replace(/[^a-z]/gi, '').slice(0, 3).toUpperCase())}
+                  />
+                  <datalist id="course-prefix-options">
+                    {coursePrefixes.map((prefix) => (
+                      <option key={prefix} value={prefix} />
+                    ))}
+                  </datalist>
+                </div>
+
+                <div className="col-span-2">
+                  <label className="mb-1 block text-xs font-bold text-gray-700">Completed Prerequisites</label>
+                  <input 
+                    type="text"
+                    className="w-full rounded-lg border border-gray-200 bg-gray-50 p-2 text-xs focus:bg-white focus:ring-2 focus:ring-[#B3A369]/50 outline-none"
+                    placeholder="e.g., ECS 032A, MAT 021A"
+                    value={completed}
+                    onChange={(e) => setCompleted(e.target.value)}
+                  />
+                </div>
               </div>
 
-              <div>
-                <label htmlFor="student-level" className="block text-sm font-bold text-gray-700 mb-2">Student Level</label>
-                <select
-                  id="student-level"
-                  className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3.5 text-sm focus:bg-white focus:ring-2 focus:ring-[#B3A369]/50 outline-none cursor-pointer"
-                  value={studentLevel}
-                  onChange={(e) => setStudentLevel(e.target.value)}
-                >
-                  <option value="Any"></option>
-                  <option value="Undergraduate">Undergraduate</option>
-                  <option value="Graduate">Graduate</option>
-                </select>
-              </div>
-
-              <div>
-                <label htmlFor="course-prefix" className="block text-sm font-bold text-gray-700 mb-2">Course Prefix (optional)</label>
-                <input
-                  id="course-prefix"
-                  list="course-prefix-options"
-                  maxLength={3}
-                  autoCapitalize="characters"
-                  className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3.5 text-sm uppercase focus:bg-white focus:ring-2 focus:ring-[#B3A369]/50 outline-none"
-                  placeholder="Type or select (e.g., ECS)"
-                  value={coursePrefix}
-                  onChange={(e) => setCoursePrefix(e.target.value.replace(/[^a-z]/gi, '').slice(0, 3).toUpperCase())}
-                />
-                <datalist id="course-prefix-options">
-                  {coursePrefixes.map((prefix) => (
-                    <option key={prefix} value={prefix} />
-                  ))}
-                </datalist>
-              </div>
-
-              <div>
-                <label className="block text-sm font-bold text-gray-700 mb-2">Completed Prerequisites <span className="font-normal text-gray-400">(Optional)</span></label>
-                <input 
-                  type="text"
-                  className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3.5 text-sm focus:bg-white focus:ring-2 focus:ring-[#B3A369]/50 outline-none"
-                  placeholder="e.g., ECS 032A, MAT 021A"
-                  value={completed}
-                  onChange={(e) => setCompleted(e.target.value)}
-                />
-              </div>
-
-              <button 
+              <button
                 type="submit"
                 disabled={isLoading}
-                className="w-full bg-[#022851] hover:bg-[#022851]/90 text-white font-bold text-sm py-4 rounded-xl shadow-md transition-all active:scale-[0.98] disabled:opacity-70 mt-4"
+                className="group mt-0.5 w-full cursor-pointer rounded-xl bg-gradient-to-r from-[#022851] to-[#07518c] px-4 py-4 text-sm font-bold text-white shadow-lg shadow-[#022851]/20 transition-all duration-200 hover:-translate-y-1 hover:from-[#064477] hover:to-[#B3A369] hover:shadow-xl hover:shadow-[#022851]/30 active:translate-y-0 active:scale-[0.99] disabled:cursor-wait disabled:opacity-70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#B3A369]"
               >
                 {isLoading ? 'Analyzing Catalog...' : 'Generate Recommendations'}
+                {!isLoading && <span aria-hidden="true" className="ml-1 inline-block transition-transform duration-200 group-hover:translate-x-1"> →</span>}
               </button>
             </form>
           </div>
@@ -311,13 +441,18 @@ export default function Home() {
           
           {/* State 1: Empty / Landing (Only shows before first search) */}
           {!hasSearched && (
-            <div className="h-full min-h-[500px] flex flex-col items-center justify-center text-center px-10 border-2 border-dashed border-gray-200 rounded-3xl bg-gray-50/50">
-              <div className="w-20 h-20 bg-white shadow-sm rounded-2xl flex items-center justify-center mb-6">
-                 <span className="text-4xl">📚</span>
+            <div className="flex min-h-[550px] flex-col items-center justify-center rounded-3xl border border-[#dbe3eb] bg-gradient-to-br from-white via-[#f7f9fc] to-[#e9f0f6] px-8 text-center shadow-sm">
+              <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-3xl bg-[#022851] shadow-xl shadow-[#022851]/20 ring-4 ring-[#B3A369]/25">
+                <svg aria-hidden="true" viewBox="0 0 48 48" className="h-12 w-12 fill-none">
+                  <path d="M24 13c-5-4-11-4-17-2v23c6-2 12-2 17 2V13Z" fill="#B3A369" stroke="#E8DDAF" strokeWidth="2" strokeLinejoin="round" />
+                  <path d="M24 13c5-4 11-4 17-2v23c-6-2-12-2-17 2V13Z" fill="#fff" stroke="#B3A369" strokeWidth="2" strokeLinejoin="round" />
+                  <path d="M11 17c3-.7 6-.4 9 1M11 22c3-.7 6-.4 9 1M28 18c3-1.4 6-1.7 9-1M28 23c3-1.4 6-1.7 9-1" stroke="#022851" strokeWidth="1.8" strokeLinecap="round" />
+                  <path d="M24 13v23" stroke="#022851" strokeWidth="2" />
+                </svg>
               </div>
-              <h3 className="text-2xl font-bold text-[#022851] mb-2">Ready to explore?</h3>
-              <p className="text-gray-500 max-w-sm">
-                Describe your ideal class on the left. AggieAI will scan the catalog using semantic search to find your perfect matches.
+              <h3 className="mb-2 text-2xl font-bold text-[#022851]">Ready to explore?</h3>
+              <p className="max-w-sm text-sm text-gray-500">
+                Add your interests, then generate recommendations to see matching classes here.
               </p>
             </div>
           )}
@@ -363,7 +498,9 @@ export default function Home() {
                   rank={index + 1}
                   title={rec.course ? `${rec.course.course_code}: ${rec.course.title}` : "Course Title"}
                   explanation={rec.reasons?.join(' ') || rec.course?.description || "Matches your academic interests and constraints."}
-                  units={rec.course?.units ?? units}
+                  units={rec.course?.units ?? appliedFilters.units}
+                  prerequisites={rec.course?.prerequisites ?? ''}
+                  geCategories={rec.course?.ge_categories ?? []}
                 />
               ))}
             </div>
