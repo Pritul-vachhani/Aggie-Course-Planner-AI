@@ -27,8 +27,26 @@ def _clean(text: str) -> str:
     return (text or "").replace("\xa0", " ").strip()
 
 
+CODE_PATTERN = re.compile(r"^([A-Za-z]+)(\d+)([A-Za-z]*)$")
+
+
 def normalize_code(code: str) -> str:
-    return _clean(code).replace(" ", "").lower()
+    """'ECS 32a', 'ecs032A' and 'ECS 032A' all become 'ecs032a'."""
+    compact = _clean(code).replace(" ", "")
+    match = CODE_PATTERN.match(compact)
+    if not match:
+        return compact.lower()
+    subject, number, suffix = match.groups()
+    return f"{subject}{int(number):03d}{suffix}".lower()
+
+
+def canonical_ge(label: str) -> str | None:
+    """Map 'AH', 'Arts & Humanities' or 'Arts & Humanities (AH)' to 'Arts & Humanities'."""
+    text = _clean(label)
+    for code, name in GE_CATEGORIES.items():
+        if text.upper() == code or name.lower() in text.lower() or f"({code})" in text.upper():
+            return name
+    return None
 
 
 def _parse_ge(details: str) -> list[str]:
