@@ -9,25 +9,26 @@ from app.services.catalog import GE_CATEGORIES, load_catalog, normalize_code
 
 # Miles's model lives at the repo root (Recomend_system.py)
 sys.path.append(str(REPO_ROOT))
-from Recomend_system import CourseRecommender, can_take  # noqa: E402
-from Recomend_system import normalize_code as miles_code  # noqa: E402
+from Recomend_system import CourseRecommender  # noqa: E402
 
 GE_CODES = {name: code for code, name in GE_CATEGORIES.items()}  # "Arts & Humanities" -> "AH"
 UNITS_PATTERN = re.compile(r"^(\d+(?:\.\d+)?)(?:\s*-\s*(\d+(?:\.\d+)?))?$")
 LEVELS = {"lower": (1, 99), "upper": (100, 199), "graduate": (200, 999)}
 
 
-# ------------------------------------------------------------------
-# Translate our catalog into the columns Miles's model expects
-# ------------------------------------------------------------------
-
-def _units_average(units: str) -> float | None:
-    """'4' -> 4.0, '1-5' -> 3.0, anything else -> None."""
+def _units_range(units: str) -> tuple[float, float] | None:
+    """'4' -> (4, 4), '1-5' -> (1, 5), anything else -> None."""
     match = UNITS_PATTERN.match(units)
     if not match:
         return None
     low = float(match.group(1))
-    return (low + float(match.group(2) or low)) / 2
+    return low, float(match.group(2) or low)
+
+
+def _units_average(units: str) -> float | None:
+    """'4' -> 4.0, '1-5' -> 3.0, anything else -> None."""
+    units_range = _units_range(units)
+    return sum(units_range) / 2 if units_range else None
 
 
 def _to_dataframe(catalog: dict[str, dict]) -> pd.DataFrame:
@@ -50,10 +51,6 @@ def get_model() -> CourseRecommender:
     return CourseRecommender(_to_dataframe(load_catalog()))
 
 
-# ------------------------------------------------------------------
-# Things Miles's model doesn't handle, done after ranking
-# ------------------------------------------------------------------
-
 def _matches_level(course: dict, level: str | None) -> bool:
     if level is None:
         return True
@@ -65,15 +62,27 @@ def _matches_level(course: dict, level: str | None) -> bool:
     return low <= int(match.group()) <= high
 
 
-def _reasons(course: dict, profile, completed: set[str]) -> list[str]:
+def _meets_filters(course: dict, profile) -> bool:
+    """The model only boosts matching courses; this guarantees every
+    result actually satisfies the filters the student selected."""
+    if profile.remaining_ge and not set(profile.remaining_ge) & set(course["ge_categories"]):
+        return False
+    if profile.preferred_units is not None:
+        units = _units_range(course["units"])
+        if units is None or not units[0] <= profile.preferred_units <= units[1]:
+            return False
+    if profile.subject and not course["course_code"].upper().startswith(profile.subject):
+        return False
+    return _matches_level(course, profile.course_level)
+
+
+def _reasons(course: dict, profile) -> list[str]:
     reasons = []
     ge = [name for name in course["ge_categories"] if name in profile.remaining_ge]
     if ge:
         reasons.append(f"Satisfies {', '.join(ge)}")
     if not course["prerequisites"]:
         reasons.append("No prerequisites")
-    elif can_take(course["prerequisites"], completed):
-        reasons.append("You meet the prerequisites")
     return reasons
 
 
@@ -90,18 +99,17 @@ def get_recommendations(profile) -> list[dict]:
 
     catalog = load_catalog()
     excluded = {normalize_code(c) for c in profile.completed_courses + profile.avoid_courses}
-    completed = {miles_code(c) for c in profile.completed_courses}
 
     recommendations = []
     for item in ranked:
         key = normalize_code(item["course_code"])
         course = catalog[key]
-        if key in excluded or not _matches_level(course, profile.course_level):
+        if key in excluded or not _meets_filters(course, profile):
             continue
         recommendations.append({
             "course": course,
             "match_score": round(item["score"] * 100, 1),
-            "reasons": _reasons(course, profile, completed),
+            "reasons": _reasons(course, profile),
         })
         if len(recommendations) == profile.top_k:
             break

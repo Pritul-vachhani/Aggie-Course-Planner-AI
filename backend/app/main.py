@@ -1,9 +1,19 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import FRONTEND_ORIGIN
 from app.routes import courses, recommend
+from app.services.recommender import get_model
 
-app = FastAPI(title="AggieAI API")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    get_model()  # load the model and embed the catalog before accepting requests
+    yield
+
+
+app = FastAPI(title="AggieAI API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
