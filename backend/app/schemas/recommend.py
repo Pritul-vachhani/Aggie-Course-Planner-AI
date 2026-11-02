@@ -19,6 +19,11 @@ class StudentProfile(BaseModel):
     # Not used by the recommender yet
     major: Optional[str] = None
 
+    @field_validator("remaining_ge", "completed_courses", "avoid_courses", mode="before")
+    @classmethod
+    def null_means_empty(cls, value):
+        return [] if value is None else value
+    
     @field_validator("remaining_ge")
     @classmethod
     def normalize_ge(cls, values: List[str]) -> List[str]:
