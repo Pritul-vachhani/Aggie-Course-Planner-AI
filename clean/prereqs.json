@@ -1,0 +1,322 @@
+{
+    "EAE 001": {
+        "prereqs": null
+    },
+    "EAE 010": {
+        "prereqs": null
+    },
+    "EAE 099": {
+        "prereqs": "Consent of instructor; lower division standing."
+    },
+    "EAE 126": {
+        "prereqs": "ENG 103 C- or better; ENG 105 C- or better; (ENG 180 C- or better or EAD 115 C- or better or MAT 128C C- or better or EME 115 C- or better)."
+    },
+    "EAE 127": {
+        "prereqs": "EME 106 C- or better."
+    },
+    "EAE 129": {
+        "prereqs": "ENG 102 C- or better."
+    },
+    "EAE 130A": {
+        "prereqs": {
+            "Initial": "(EAE 126 or EAE 127 C- or better); EAE 129 C- or better (can be concurrent).",
+            "Winter Quarter 2027": "EAE 127 C- or better; EAE 129 C- or better (can be concurrent)."
+        }
+    },
+    "EAE 130B": {
+        "prereqs": {
+            "Initial": "EAE 130A C- or better.",
+            "Winter Quarter 2027": "EAE 130A."
+        }
+    },
+    "EAE 133": {
+        "prereqs": "ENG 104 C- or better or ENG 104V C- or better."
+    },
+    "EAE 135": {
+        "prereqs": "ENG 104 C- or better or ENG 104V C- or better; EAE 126 or EAE 127 recommended."
+    },
+    "EAE 137": {
+        "prereqs": "ENG 104 C- or better or ENG 104V C- or better."
+    },
+    "EAE 138": {
+        "prereqs": "EME 106 C- or better."
+    },
+    "EAE 140": {
+        "prereqs": "EME 106 C- or better."
+    },
+    "EAE 142": {
+        "prereqs": "ENG 102 C- or better."
+    },
+    "EAE 143A": {
+        "prereqs": {
+            "Initial": "EAE 140 C- or better; EAE 142 C- or better."
+        }
+    },
+    "EAE 143B": {
+        "prereqs": {
+            "Initial": "EAE 143A C- or better."
+        }
+    },
+    "EAE 189C": {
+        "prereqs": "ENG 102; consent of instructor."
+    },
+    "EAE 192": {
+        "prereqs": "Consent of instructor; approval of project prior to period of internship."
+    },
+    "EAE 198": {
+        "prereqs": "Consent of instructor."
+    },
+    "EAE 199": {
+        "prereqs": "Consent of instructor."
+    },
+    "AAS 010": {
+        "prereqs": null
+    },
+    "AAS 012": {
+        "prereqs": null
+    },
+    "AAS 015": {
+        "prereqs": null
+    },
+    "AAS 016": {
+        "prereqs": null
+    },
+    "AAS 017": {
+        "prereqs": null
+    },
+    "AAS 018": {
+        "prereqs": null
+    },
+    "AAS 050": {
+        "prereqs": null
+    },
+    "AAS 051": {
+        "prereqs": null
+    },
+    "AAS 052": {
+        "prereqs": null
+    },
+    "AAS 053": {
+        "prereqs": null
+    },
+    "AAS 080": {
+        "prereqs": null
+    },
+    "AAS 083": {
+        "prereqs": null
+    },
+    "AAS 099": {
+        "prereqs": "Consent of instructor."
+    },
+    "AAS 100": {
+        "prereqs": "Upper division standing or consent of instructor."
+    },
+    "AAS 101": {
+        "prereqs": "AAS 010; or consent of instructor."
+    },
+    "AAS 103": {
+        "prereqs": null
+    },
+    "AAS 107A": {
+        "prereqs": "Upper division standing."
+    },
+    "AAS 107B": {
+        "prereqs": "Upper division standing."
+    },
+    "AAS 107C": {
+        "prereqs": null
+    },
+    "AAS 107D": {
+        "prereqs": null
+    },
+    "AAS 110": {
+        "prereqs": null
+    },
+    "AAS 111": {
+        "prereqs": "Upper division standing."
+    },
+    "AAS 115": {
+        "prereqs": "Upper division standing."
+    },
+    "AAS 115V": {
+        "prereqs": "Upper division standing."
+    },
+    "AAS 116": {
+        "prereqs": null
+    },
+    "AAS 120": {
+        "prereqs": null
+    },
+    "AAS 123": {
+        "prereqs": "Upper division standing or consent of instructor."
+    },
+    "AAS 130": {
+        "prereqs": null
+    },
+    "AAS 133": {
+        "prereqs": "Upper division standing or consent of instructor."
+    },
+    "AAS 136": {
+        "prereqs": null
+    },
+    "AAS 138": {
+        "prereqs": null
+    },
+    "AAS 141": {
+        "prereqs": "Upper division standing."
+    },
+    "AAS 145A": {
+        "prereqs": "Upper division standing."
+    },
+    "AAS 145B": {
+        "prereqs": "Upper division standing; or consent of instructor."
+    },
+    "AAS 150A": {
+        "prereqs": "Upper division standing."
+    },
+    "AAS 150B": {
+        "prereqs": "Upper division standing."
+    },
+    "AAS 151": {
+        "prereqs": null
+    },
+    "AAS 152": {
+        "prereqs": "Upper division standing."
+    },
+    "AAS 153": {
+        "prereqs": "Completion of Entry Level Writing Requirement (ELWR)."
+    },
+    "AAS 155A": {
+        "prereqs": null
+    },
+    "AAS 156": {
+        "prereqs": "Upper division standing."
+    },
+    "AAS 157": {
+        "prereqs": "Upper division standing."
+    },
+    "AAS 160": {
+        "prereqs": "Upper division standing."
+    },
+    "AAS 162": {
+        "prereqs": null
+    },
+    "AAS 163": {
+        "prereqs": null
+    },
+    "AAS 165": {
+        "prereqs": "Upper division standing; or consent of instructor."
+    },
+    "AAS 168": {
+        "prereqs": "Consent of instructor; AAS 050 recommended."
+    },
+    "AAS 169": {
+        "prereqs": null
+    },
+    "AAS 170": {
+        "prereqs": "AAS 050 recommended."
+    },
+    "AAS 171": {
+        "prereqs": "Consent of instructor."
+    },
+    "AAS 172": {
+        "prereqs": null
+    },
+    "AAS 175A": {
+        "prereqs": "AAS 050 recommended."
+    },
+    "AAS 175B": {
+        "prereqs": "Consent of instructor."
+    },
+    "AAS 176": {
+        "prereqs": "Upper division standing."
+    },
+    "AAS 177": {
+        "prereqs": null
+    },
+    "AAS 178": {
+        "prereqs": null
+    },
+    "AAS 179": {
+        "prereqs": null
+    },
+    "AAS 180": {
+        "prereqs": null
+    },
+    "AAS 181": {
+        "prereqs": "Upper division standing or consent of instructor."
+    },
+    "AAS 182": {
+        "prereqs": null
+    },
+    "AAS 183A": {
+        "prereqs": null
+    },
+    "AAS 183B": {
+        "prereqs": null
+    },
+    "AAS 185": {
+        "prereqs": "Upper division standing; AAS 050 recommended."
+    },
+    "AAS 190": {
+        "prereqs": "Upper division standing in African American African Studies (AAS) courses or consent of instructor."
+    },
+    "AAS 192": {
+        "prereqs": "Consent of instructor; completion of 12 units of upper division study in African American African Studies (AAS) courses; upper division standing."
+    },
+    "AAS 194HA": {
+        "prereqs": "Consent of instructor."
+    },
+    "AAS 194HB": {
+        "prereqs": "AAS 194HA; consent of instructor."
+    },
+    "AAS 197T": {
+        "prereqs": "Consent of major committee; upper division standing with major in African American African Studies."
+    },
+    "AAS 198": {
+        "prereqs": {
+            "Initial": "Consent of instructor."
+        }
+    },
+    "AAS 199": {
+        "prereqs": {
+            "Initial": "Consent of instructor."
+        }
+    },
+    "AAS 201": {
+        "prereqs": "Graduate standing."
+    },
+    "AAS 202": {
+        "prereqs": "Graduate standing."
+    },
+    "AAS 203": {
+        "prereqs": null
+    },
+    "AAS 204": {
+        "prereqs": null
+    },
+    "AAS 290": {
+        "prereqs": "AAS 201 or AAS 202 or AAS 203 or AAS 204; or consent of Instructor."
+    },
+    "AAS 298A": {
+        "prereqs": "Graduate standing."
+    },
+    "AAS 298B": {
+        "prereqs": null
+    },
+    "AAS 299": {
+        "prereqs": null
+    },
+    "AAS 396": {
+        "prereqs": "Consent of instructor; graduate standing."
+    },
+    "AGC 290": {
+        "prereqs": null
+    },
+    "AGC 298": {
+        "prereqs": "Consent of instructor."
+    },
+    "AGC 299": {
+        "prereqs": null
+    }
+}
