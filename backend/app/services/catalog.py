@@ -66,6 +66,7 @@ def _to_course(raw: dict, department: str) -> dict:
         "course_code": _clean(raw["code"]),
         "title": _clean(raw["title"]),
         "description": _clean(raw["desc"].replace(ENDED_MARKER, "")),
+        "details": _clean(raw.get("details", "")),
         "units": _clean(raw["units"]),
         "prerequisites": _clean(raw["prereqs"]).rstrip("."),
         "ge_categories": _parse_ge(_clean(raw.get("details", ""))),

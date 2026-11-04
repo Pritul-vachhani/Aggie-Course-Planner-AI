@@ -193,7 +193,7 @@ export default function Home() {
                     required
                     rows={4}
                     className="min-h-24 w-full rounded-xl border border-gray-300 bg-white p-2.5 text-sm leading-5 focus:border-[#B3A369] focus:ring-2 focus:ring-[#B3A369]/50 outline-none transition-all resize-y"
-                    placeholder="For example: I enjoy psychology and movies, so classes related to those would be fire."
+                    placeholder="E.g. I am interested in psychology and movies"
                     value={interests}
                     onChange={(e) => setInterests(e.target.value)}
                   />
