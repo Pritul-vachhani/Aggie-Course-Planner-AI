@@ -200,7 +200,7 @@ Term Code: "YYYYTT"
 def main():
     
     SLEEP_INTERVAL = 1
-    TERM = "202610"#"202701"
+    TERM = "202701" # "202610"
 
     records = []
     with requests.Session() as session:
@@ -219,6 +219,6 @@ def main():
     tree = build_tree(records)
     out = f"schedule_{TERM}.json"
     curdir = os.path.dirname(__file__)
-    with open(os.path.join(curdir, out), "w") as f: json.dump(tree, f)
+    with open(os.path.join(curdir, out), "w") as f: json.dump(tree, f, indent=4)
 
 if __name__ == "__main__": main()
