@@ -2,10 +2,13 @@
 
 import { useEffect, useState } from 'react';
 
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_BASE_URL ??
+  (process.env.NODE_ENV === 'production' ? '/api' : 'http://localhost:8000');
+
 type CourseCardProps = {
   title: string;
   rank: number;
-  explanation: string;
   units: string | number;
   prerequisites: string;
   geCategories: string[];
@@ -27,9 +30,12 @@ type Recommendation = {
 type RecommendationRequest = {
   interests: string;
   top_k: number;
+  course_level: CourseLevel;
   remaining_ge?: string[];
   completed_courses?: string[];
 };
+
+type CourseLevel = 'undergraduate' | 'lower' | 'upper' | 'graduate';
 
 type CatalogCourse = {
   course_code: string;
@@ -43,7 +49,7 @@ type CatalogCourse = {
 type AppliedFilters = {
   ge: string;
   units: string;
-  studentLevel: string;
+  studentLevel: CourseLevel | '';
   coursePrefix: string;
   completedCodes: string[];
 };
@@ -62,19 +68,23 @@ const GE_ABBREVIATIONS: Record<string, string> = {
   'Writing Experience': 'WE',
 };
 
-function matchesStudentLevel(courseCode: string, studentLevel: string) {
-  if (studentLevel === 'Any') return true;
-
+function matchesStudentLevel(courseCode: string, studentLevel: CourseLevel | '') {
   const courseNumber = Number(courseCode.trim().split(/\s+/)[1]?.match(/^\d+/)?.[0]);
   if (!Number.isFinite(courseNumber)) return false;
 
-  if (studentLevel === 'Lower division undergraduate') {
+  if (studentLevel === 'undergraduate') {
+    return courseNumber >= 1 && courseNumber < 200;
+  }
+  if (studentLevel === 'lower') {
     return courseNumber >= 1 && courseNumber < 100;
   }
-  if (studentLevel === 'Upper division undergraduate') {
+  if (studentLevel === 'upper') {
     return courseNumber >= 100 && courseNumber < 200;
   }
-  return courseNumber >= 200;
+  if (studentLevel === 'graduate') {
+    return courseNumber >= 200;
+  }
+  return false;
 }
 
 function matchesUnits(courseUnits: string, selectedUnits: string) {
@@ -97,7 +107,7 @@ function matchesOptionalFilters(
   filters: {
     ge: string;
     units: string;
-    studentLevel: string;
+    studentLevel: CourseLevel | '';
     coursePrefix: string;
   }
 ) {
@@ -111,7 +121,7 @@ function matchesOptionalFilters(
 }
 
 // Polished, ranked Course Card with hover effects and Aggie colors
-function CourseCard({ title, rank, explanation, units, prerequisites, geCategories }: CourseCardProps) {
+function CourseCard({ title, rank, units, prerequisites, geCategories }: CourseCardProps) {
   return (
     <article className="bg-white rounded-2xl shadow-sm hover:shadow-lg transition-all duration-300 border border-gray-100 p-6 flex gap-5 relative overflow-hidden group">
       {/* Decorative left border on hover */}
@@ -130,7 +140,6 @@ function CourseCard({ title, rank, explanation, units, prerequisites, geCategori
             {units} Units
           </span>
         </div>
-        <p className="text-gray-600 leading-relaxed text-sm">{explanation}</p>
         <div className="mt-4">
           <h5 className="text-sm font-bold text-gray-800">GE fulfilled</h5>
           <p className="mt-1 text-sm text-gray-600">
@@ -155,7 +164,7 @@ export default function Home() {
   const [interests, setInterests] = useState('');
   const [ge, setGe] = useState('Any');
   const [units, setUnits] = useState('Any');
-  const [studentLevel, setStudentLevel] = useState('Any');
+  const [studentLevel, setStudentLevel] = useState<CourseLevel | ''>('');
   const [coursePrefix, setCoursePrefix] = useState('');
   const [coursePrefixes, setCoursePrefixes] = useState<string[]>([]);
   const [catalogCourses, setCatalogCourses] = useState<CatalogCourse[]>([]);
@@ -166,7 +175,7 @@ export default function Home() {
   const [appliedFilters, setAppliedFilters] = useState<AppliedFilters>({
     ge: 'Any',
     units: 'Any',
-    studentLevel: 'Any',
+    studentLevel: '',
     coursePrefix: '',
     completedCodes: [],
   });
@@ -182,7 +191,7 @@ export default function Home() {
         let offset = 0;
 
         while (true) {
-          const response = await fetch(`http://localhost:8000/courses/?limit=${pageSize}&offset=${offset}`);
+          const response = await fetch(`${API_BASE_URL}/courses/?limit=${pageSize}&offset=${offset}`);
           if (!response.ok) {
             throw new Error(`Could not load courses (${response.status}).`);
           }
@@ -210,7 +219,7 @@ export default function Home() {
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!interests.trim()) return;
+    if (!interests.trim() || !studentLevel) return;
 
     const filters: AppliedFilters = {
       ge,
@@ -228,7 +237,8 @@ export default function Home() {
     try {
       const payload: RecommendationRequest = {
         interests: interests.trim(),
-        top_k: 20
+        top_k: 20,
+        course_level: studentLevel,
       };
 
       // Keys must match StudentProfile in backend/app/schemas/recommend.py
@@ -237,11 +247,19 @@ export default function Home() {
         payload.completed_courses = completed.split(',').map((c) => c.trim()).filter(Boolean);
       }
 
-      const response = await fetch('http://localhost:8000/recommend/', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
+      const controller = new AbortController();
+      const requestTimeout = setTimeout(() => controller.abort(), 120_000);
+      let response: Response;
+      try {
+        response = await fetch(`${API_BASE_URL}/recommend/`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(requestTimeout);
+      }
 
       if (!response.ok) {
         const errorData = await response.json();
@@ -259,27 +277,16 @@ export default function Home() {
         setRecommendations(backendRecommendations);
       } else {
         const completedCodes = new Set(filters.completedCodes);
-        const hasOptionalFilters =
-          ge !== 'Any' ||
-          units !== 'Any' ||
-          studentLevel !== 'Any' ||
-          Boolean(filters.coursePrefix) ||
-          filters.completedCodes.length > 0;
-
-        if (hasOptionalFilters) {
-          const fallbackRecommendations = catalogCourses
-            .filter((course) => !completedCodes.has(course.course_code.replace(/\s+/g, '').toUpperCase()))
-            .filter((course) => matchesOptionalFilters(course, filters))
-            .slice(0, 5)
-            .map((course): Recommendation => ({
-              course,
-              match_score: 0,
-              reasons: ['Matches your selected filters; no interest-based matches were found.'],
-            }));
-          setRecommendations(fallbackRecommendations);
-        } else {
-          setRecommendations(backendRecommendations);
-        }
+        const fallbackRecommendations = catalogCourses
+          .filter((course) => !completedCodes.has(course.course_code.replace(/\s+/g, '').toUpperCase()))
+          .filter((course) => matchesOptionalFilters(course, filters))
+          .slice(0, 5)
+          .map((course): Recommendation => ({
+            course,
+            match_score: 0,
+            reasons: ['Matches your selected filters; no interest-based matches were found.'],
+          }));
+        setRecommendations(fallbackRecommendations);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An unexpected error occurred.');
@@ -328,11 +335,36 @@ export default function Home() {
                     required
                     rows={4}
                     className="min-h-24 w-full rounded-xl border border-gray-300 bg-white p-2.5 text-sm leading-5 focus:border-[#B3A369] focus:ring-2 focus:ring-[#B3A369]/50 outline-none transition-all resize-y"
-                    placeholder="For example: I need an Arts & Humanities GE, enjoy psychology and movies, and want a class with few prerequisites."
+                    placeholder="For example: I enjoy psychology and movies, so classes related to those would be fire."
                     value={interests}
                     onChange={(e) => setInterests(e.target.value)}
                   />
                 </div>
+              </div>
+
+              <div className="rounded-xl border border-[#B3A369]/70 bg-amber-50/70 p-2">
+                <label htmlFor="student-level" className="mb-1 block text-xs font-bold text-gray-900">
+                  Student Level <span className="text-red-600" aria-label="required">*</span>
+                </label>
+                <select
+                  id="student-level"
+                  required
+                  aria-required="true"
+                  className="w-full rounded-lg border border-gray-200 bg-white p-2 text-xs focus:ring-2 focus:ring-[#B3A369]/50 outline-none cursor-pointer"
+                  value={studentLevel}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    if (value === '' || value === 'undergraduate' || value === 'lower' || value === 'upper' || value === 'graduate') {
+                      setStudentLevel(value);
+                    }
+                  }}
+                >
+                  <option value="" disabled>Please select a student level</option>
+                  <option value="undergraduate">All undergraduate courses</option>
+                  <option value="lower">Lower division undergraduate (001–099)</option>
+                  <option value="upper">Upper division undergraduate (100–199)</option>
+                  <option value="graduate">Graduate (200+)</option>
+                </select>
               </div>
 
               <div className="grid grid-cols-2 content-start gap-2">
@@ -379,21 +411,6 @@ export default function Home() {
                 </div>
 
                 <div>
-                  <label htmlFor="student-level" className="mb-1 block text-xs font-bold text-gray-700">Student Level</label>
-                  <select
-                    id="student-level"
-                    className="w-full rounded-lg border border-gray-200 bg-gray-50 p-2 text-xs focus:bg-white focus:ring-2 focus:ring-[#B3A369]/50 outline-none cursor-pointer"
-                    value={studentLevel}
-                    onChange={(e) => setStudentLevel(e.target.value)}
-                  >
-                    <option value="Any">Any level</option>
-                    <option value="Lower division undergraduate">Lower division undergraduate (001–099)</option>
-                    <option value="Upper division undergraduate">Upper division undergraduate (100–199)</option>
-                    <option value="Graduate">Graduate (200+)</option>
-                  </select>
-                </div>
-
-                <div>
                   <label htmlFor="course-prefix" className="mb-1 block text-xs font-bold text-gray-700">Course Prefix</label>
                   <input
                     id="course-prefix"
@@ -412,7 +429,7 @@ export default function Home() {
                   </datalist>
                 </div>
 
-                <div className="col-span-2">
+                <div className="min-w-0">
                   <label className="mb-1 block text-xs font-bold text-gray-700">Completed Prerequisites</label>
                   <input 
                     type="text"
@@ -497,7 +514,6 @@ export default function Home() {
                   key={rec.course?.course_code ?? index}
                   rank={index + 1}
                   title={rec.course ? `${rec.course.course_code}: ${rec.course.title}` : "Course Title"}
-                  explanation={rec.reasons?.join(' ') || rec.course?.description || "Matches your academic interests and constraints."}
                   units={rec.course?.units ?? appliedFilters.units}
                   prerequisites={rec.course?.prerequisites ?? ''}
                   geCategories={rec.course?.ge_categories ?? []}

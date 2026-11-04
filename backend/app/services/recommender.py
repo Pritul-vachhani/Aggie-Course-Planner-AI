@@ -58,8 +58,11 @@ def _matches_level(course: dict, level: str | None) -> bool:
     match = re.match(r"\d+", parts[1]) if len(parts) > 1 else None
     if not match:
         return False
+    course_number = int(match.group())
+    if level == "undergraduate":
+        return 1 <= course_number < 200
     low, high = LEVELS[level]
-    return low <= int(match.group()) <= high
+    return low <= course_number <= high
 
 
 def _meets_filters(course: dict, profile) -> bool:
