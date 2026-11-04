@@ -1,17 +1,19 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ??
   (process.env.NODE_ENV === 'production' ? '/api' : 'http://localhost:8000');
+const API_URL = API_BASE_URL.replace(/\/+$/, '');
 
 type CourseCardProps = {
   title: string;
   rank: number;
+  description: string;
+  details: string;
   units: string | number;
   prerequisites: string;
-  geCategories: string[];
 };
 
 type Recommendation = {
@@ -19,6 +21,7 @@ type Recommendation = {
     course_code: string;
     title: string;
     description: string;
+    details: string;
     units: string;
     prerequisites: string;
     ge_categories: string[];
@@ -32,96 +35,15 @@ type RecommendationRequest = {
   top_k: number;
   course_level: CourseLevel;
   remaining_ge?: string[];
+  preferred_units?: number;
+  subject?: string;
   completed_courses?: string[];
 };
 
 type CourseLevel = 'undergraduate' | 'lower' | 'upper' | 'graduate';
 
-type CatalogCourse = {
-  course_code: string;
-  title: string;
-  description: string;
-  units: string;
-  prerequisites: string;
-  ge_categories: string[];
-};
-
-type AppliedFilters = {
-  ge: string;
-  units: string;
-  studentLevel: CourseLevel | '';
-  coursePrefix: string;
-  completedCodes: string[];
-};
-
-const GE_ABBREVIATIONS: Record<string, string> = {
-  'Arts & Humanities': 'AH',
-  'Science & Engineering': 'SE',
-  'Social Sciences': 'SS',
-  'American Cultures, Governance, & History': 'ACGH',
-  'Domestic Diversity': 'DD',
-  'Oral Skills': 'OL',
-  'Quantitative Literacy': 'QL',
-  'Scientific Literacy': 'SL',
-  'Visual Literacy': 'VL',
-  'World Cultures': 'WC',
-  'Writing Experience': 'WE',
-};
-
-function matchesStudentLevel(courseCode: string, studentLevel: CourseLevel | '') {
-  const courseNumber = Number(courseCode.trim().split(/\s+/)[1]?.match(/^\d+/)?.[0]);
-  if (!Number.isFinite(courseNumber)) return false;
-
-  if (studentLevel === 'undergraduate') {
-    return courseNumber >= 1 && courseNumber < 200;
-  }
-  if (studentLevel === 'lower') {
-    return courseNumber >= 1 && courseNumber < 100;
-  }
-  if (studentLevel === 'upper') {
-    return courseNumber >= 100 && courseNumber < 200;
-  }
-  if (studentLevel === 'graduate') {
-    return courseNumber >= 200;
-  }
-  return false;
-}
-
-function matchesUnits(courseUnits: string, selectedUnits: string) {
-  if (selectedUnits === 'Any') return true;
-
-  const requestedUnits = Number(selectedUnits);
-  const fixedUnits = Number(courseUnits);
-  if (Number.isFinite(fixedUnits)) return fixedUnits === requestedUnits;
-
-  const range = courseUnits.match(/^\s*(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)\s*$/);
-  if (!range) return false;
-
-  const minimum = Number(range[1]);
-  const maximum = Number(range[2]);
-  return requestedUnits >= minimum && requestedUnits <= maximum;
-}
-
-function matchesOptionalFilters(
-  course: Recommendation['course'],
-  filters: {
-    ge: string;
-    units: string;
-    studentLevel: CourseLevel | '';
-    coursePrefix: string;
-  }
-) {
-  return (
-    (!filters.coursePrefix ||
-      course.course_code.trim().split(/\s+/)[0].toUpperCase().startsWith(filters.coursePrefix)) &&
-    matchesStudentLevel(course.course_code, filters.studentLevel) &&
-    matchesUnits(course.units, filters.units) &&
-    (filters.ge === 'Any' || course.ge_categories.includes(filters.ge))
-  );
-}
-
 // Polished, ranked Course Card with hover effects and Aggie colors
-function CourseCard({ title, rank, units, prerequisites, geCategories }: CourseCardProps) {
+function CourseCard({ title, rank, description, details, units, prerequisites }: CourseCardProps) {
   return (
     <article className="bg-white rounded-2xl shadow-sm hover:shadow-lg transition-all duration-300 border border-gray-100 p-6 flex gap-5 relative overflow-hidden group">
       {/* Decorative left border on hover */}
@@ -140,18 +62,22 @@ function CourseCard({ title, rank, units, prerequisites, geCategories }: CourseC
             {units} Units
           </span>
         </div>
+        {description.trim() && (
+          <p className="text-sm leading-relaxed text-gray-600">{description}</p>
+        )}
         <div className="mt-4">
-          <h5 className="text-sm font-bold text-gray-800">GE fulfilled</h5>
-          <p className="mt-1 text-sm text-gray-600">
-            {geCategories.length > 0
-              ? geCategories.map((category) => `${category} (${GE_ABBREVIATIONS[category] ?? category})`).join(', ')
-              : 'None listed'}
+          <h5 className="text-sm font-bold text-gray-800">Course details</h5>
+          <p className="mt-1 whitespace-pre-line text-sm text-gray-600">
+            {details.trim() || 'None listed'}
           </p>
         </div>
         <div className="mt-4 border-t border-gray-100 pt-3">
           <h5 className="text-sm font-bold text-gray-800">Prerequisites</h5>
           <p className="mt-1 text-sm text-gray-600">
             {prerequisites.trim() || 'None listed'}
+          </p>
+          <p className="mt-2 text-xs text-gray-500">
+            Verify prerequisites and enrollment eligibility with UC Davis before registering.
           </p>
         </div>
       </div>
@@ -166,69 +92,18 @@ export default function Home() {
   const [units, setUnits] = useState('Any');
   const [studentLevel, setStudentLevel] = useState<CourseLevel | ''>('');
   const [coursePrefix, setCoursePrefix] = useState('');
-  const [coursePrefixes, setCoursePrefixes] = useState<string[]>([]);
-  const [catalogCourses, setCatalogCourses] = useState<CatalogCourse[]>([]);
   const [completed, setCompleted] = useState('');
 
   // Results State
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
-  const [appliedFilters, setAppliedFilters] = useState<AppliedFilters>({
-    ge: 'Any',
-    units: 'Any',
-    studentLevel: '',
-    coursePrefix: '',
-    completedCodes: [],
-  });
   const [isLoading, setIsLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [error, setError] = useState('');
-
-  useEffect(() => {
-    const fetchCoursePrefixes = async () => {
-      try {
-        const courses: CatalogCourse[] = [];
-        const pageSize = 500;
-        let offset = 0;
-
-        while (true) {
-          const response = await fetch(`${API_BASE_URL}/courses/?limit=${pageSize}&offset=${offset}`);
-          if (!response.ok) {
-            throw new Error(`Could not load courses (${response.status}).`);
-          }
-
-          const page: CatalogCourse[] = await response.json();
-          courses.push(...page);
-          if (page.length < pageSize) break;
-          offset += pageSize;
-        }
-
-        const prefixes = new Set(
-          courses
-            .map((course) => course.course_code.trim().split(/\s+/)[0]?.slice(0, 3).toUpperCase())
-            .filter((prefix): prefix is string => Boolean(prefix))
-        );
-        setCatalogCourses(courses);
-        setCoursePrefixes([...prefixes].sort());
-      } catch (err) {
-        console.error('Error loading course prefixes:', err);
-      }
-    };
-
-    fetchCoursePrefixes();
-  }, []);
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!interests.trim() || !studentLevel) return;
 
-    const filters: AppliedFilters = {
-      ge,
-      units,
-      studentLevel,
-      coursePrefix: coursePrefix.trim().toUpperCase(),
-      completedCodes: completed.split(',').map((code) => code.replace(/\s+/g, '').toUpperCase()).filter(Boolean),
-    };
-    setAppliedFilters(filters);
     setIsLoading(true);
     setHasSearched(true);
     setError('');
@@ -237,21 +112,23 @@ export default function Home() {
     try {
       const payload: RecommendationRequest = {
         interests: interests.trim(),
-        top_k: 20,
+        top_k: 5,
         course_level: studentLevel,
       };
 
       // Keys must match StudentProfile in backend/app/schemas/recommend.py
       if (ge !== 'Any') payload.remaining_ge = [ge];
+      if (units !== 'Any') payload.preferred_units = Number(units);
+      if (coursePrefix.trim()) payload.subject = coursePrefix.trim().toUpperCase();
       if (completed.trim() !== '') {
         payload.completed_courses = completed.split(',').map((c) => c.trim()).filter(Boolean);
       }
 
       const controller = new AbortController();
-      const requestTimeout = setTimeout(() => controller.abort(), 120_000);
+      const requestTimeout = setTimeout(() => controller.abort(), 300_000);
       let response: Response;
       try {
-        response = await fetch(`${API_BASE_URL}/recommend/`, {
+        response = await fetch(`${API_URL}/recommend/`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
@@ -262,44 +139,25 @@ export default function Home() {
       }
 
       if (!response.ok) {
-        const errorData = await response.json();
-        const details = JSON.stringify(errorData.detail ?? errorData);
-        throw new Error(`Backend Error ${response.status}: ${details}`);
+        const errorBody = await response.json().catch(() => null);
+        const details = errorBody?.detail
+          ? JSON.stringify(errorBody.detail)
+          : response.statusText || 'The recommendation service could not complete the request.';
+        throw new Error(`Request failed (${response.status}): ${details}`);
       }
 
       const data: { recommendations: Recommendation[] } = await response.json();
-      const backendRecommendations = data.recommendations ?? [];
-      const matchingRecommendations = backendRecommendations.filter((recommendation) =>
-        matchesOptionalFilters(recommendation.course, filters)
-      );
-
-      if (matchingRecommendations.length > 0) {
-        setRecommendations(backendRecommendations);
-      } else {
-        const completedCodes = new Set(filters.completedCodes);
-        const fallbackRecommendations = catalogCourses
-          .filter((course) => !completedCodes.has(course.course_code.replace(/\s+/g, '').toUpperCase()))
-          .filter((course) => matchesOptionalFilters(course, filters))
-          .slice(0, 5)
-          .map((course): Recommendation => ({
-            course,
-            match_score: 0,
-            reasons: ['Matches your selected filters; no interest-based matches were found.'],
-          }));
-        setRecommendations(fallbackRecommendations);
-      }
+      setRecommendations(data.recommendations ?? []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An unexpected error occurred.');
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        setError('The recommendation request took too long. Please check that the backend is running, then try again.');
+      } else {
+        setError(err instanceof Error ? err.message : 'An unexpected error occurred.');
+      }
     } finally {
       setIsLoading(false);
     }
   };
-
-  const filteredRecommendations = recommendations
-    .filter((recommendation) =>
-      matchesOptionalFilters(recommendation.course, appliedFilters)
-    )
-    .slice(0, 5);
 
   return (
     <main className="min-h-screen bg-[#f8f9fa] font-sans selection:bg-[#B3A369] selection:text-[#022851]">
@@ -318,7 +176,7 @@ export default function Home() {
         {/* Left Column: Configuration Panel */}
         <div className="lg:col-span-4">
           <div className="rounded-3xl border border-gray-200 bg-white p-3 shadow-md shadow-[#022851]/5">
-            <h2 className="mb-1 text-lg font-bold text-[#022851]">Design Your Quarter</h2>
+            <h2 className="mb-1 text-lg font-bold text-[#022851]">Plan for Winter Quarter 2027</h2>
             <p className="mb-3 text-xs text-gray-500">Tell AggieAI what you’re looking for.</p>
 
             <form id="recommendation-form" onSubmit={handleSearch} className="flex flex-col gap-2">
@@ -414,7 +272,6 @@ export default function Home() {
                   <label htmlFor="course-prefix" className="mb-1 block text-xs font-bold text-gray-700">Course Prefix</label>
                   <input
                     id="course-prefix"
-                    list="course-prefix-options"
                     maxLength={3}
                     autoCapitalize="characters"
                     className="w-full rounded-lg border border-gray-200 bg-gray-50 p-2 text-xs uppercase focus:bg-white focus:ring-2 focus:ring-[#B3A369]/50 outline-none"
@@ -422,11 +279,6 @@ export default function Home() {
                     value={coursePrefix}
                     onChange={(e) => setCoursePrefix(e.target.value.replace(/[^a-z]/gi, '').slice(0, 3).toUpperCase())}
                   />
-                  <datalist id="course-prefix-options">
-                    {coursePrefixes.map((prefix) => (
-                      <option key={prefix} value={prefix} />
-                    ))}
-                  </datalist>
                 </div>
 
                 <div className="min-w-0">
@@ -446,7 +298,7 @@ export default function Home() {
                 disabled={isLoading}
                 className="group mt-0.5 w-full cursor-pointer rounded-xl bg-gradient-to-r from-[#022851] to-[#07518c] px-4 py-4 text-sm font-bold text-white shadow-lg shadow-[#022851]/20 transition-all duration-200 hover:-translate-y-1 hover:from-[#064477] hover:to-[#B3A369] hover:shadow-xl hover:shadow-[#022851]/30 active:translate-y-0 active:scale-[0.99] disabled:cursor-wait disabled:opacity-70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#B3A369]"
               >
-                {isLoading ? 'Analyzing Catalog...' : 'Generate Recommendations'}
+                {isLoading ? 'Finding Winter 2027 Matches...' : 'Generate Recommendations'}
                 {!isLoading && <span aria-hidden="true" className="ml-1 inline-block transition-transform duration-200 group-hover:translate-x-1"> →</span>}
               </button>
             </form>
@@ -469,7 +321,7 @@ export default function Home() {
               </div>
               <h3 className="mb-2 text-2xl font-bold text-[#022851]">Ready to explore?</h3>
               <p className="max-w-sm text-sm text-gray-500">
-                Add your interests, then generate recommendations to see matching classes here.
+                Add your interests to get ranked course recommendations for Winter Quarter 2027.
               </p>
             </div>
           )}
@@ -495,39 +347,42 @@ export default function Home() {
             <div className="bg-red-50 text-red-800 p-6 rounded-2xl border border-red-100 flex items-start gap-4">
                <span className="text-2xl">⚠️</span>
                <div>
-                 <h4 className="font-bold mb-1">Connection Failed</h4>
+                 <h4 className="font-bold mb-1">Could not get recommendations</h4>
                  <p className="text-sm">{error}</p>
                </div>
             </div>
           )}
 
           {/* State 4: Results Rendering */}
-          {!isLoading && !error && hasSearched && filteredRecommendations.length > 0 && (
+          {!isLoading && !error && hasSearched && recommendations.length > 0 && (
             <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
               <div className="flex items-center justify-between mb-6">
-                <h3 className="text-xl font-bold text-gray-900">Top 5 Matches</h3>
+                <h3 className="text-xl font-bold text-gray-900">Top Winter 2027 Matches</h3>
                 <span className="text-sm font-semibold text-[#B3A369]">Powered by all-MiniLM-L6-v2</span>
               </div>
               
-              {filteredRecommendations.map((rec, index) => (
+              {recommendations.map((rec, index) => (
                 <CourseCard
                   key={rec.course?.course_code ?? index}
                   rank={index + 1}
                   title={rec.course ? `${rec.course.course_code}: ${rec.course.title}` : "Course Title"}
-                  units={rec.course?.units ?? appliedFilters.units}
+                  description={rec.course?.description ?? ''}
+                  details={rec.course?.details ?? ''}
+                  units={rec.course?.units ?? 'Units not listed'}
                   prerequisites={rec.course?.prerequisites ?? ''}
-                  geCategories={rec.course?.ge_categories ?? []}
                 />
               ))}
             </div>
           )}
 
           {/* State 5: No Results Found */}
-          {!isLoading && !error && hasSearched && filteredRecommendations.length === 0 && (
+          {!isLoading && !error && hasSearched && recommendations.length === 0 && (
             <div className="text-center py-20 bg-white rounded-3xl border border-gray-100">
               <span className="text-4xl mb-4 block">🔍</span>
-              <h3 className="text-lg font-bold text-gray-900">No perfect matches found.</h3>
-              <p className="text-gray-500 mt-2">Try adjusting your filters or broadening your interests.</p>
+              <h3 className="text-lg font-bold text-gray-900">No ranked matches found for Winter 2027.</h3>
+              <p className="text-gray-500 mt-2">
+                Try broadening your interests or adjusting your GE, unit, course level, or subject filters.
+              </p>
             </div>
           )}
 
