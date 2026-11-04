@@ -1,13 +1,5 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
-## AggieAI API configuration
-
-The frontend reads `NEXT_PUBLIC_API_BASE_URL` for both catalog and recommendation requests. Copy `.env.example` to `.env.local` for local development; the default local backend URL is `http://localhost:8000`.
-
-For a separate Vercel frontend deployment, set `NEXT_PUBLIC_API_BASE_URL` in the Vercel project settings to the public base URL of the FastAPI backend (for example, `https://your-backend.example.com`, with no trailing slash). Redeploy the frontend after changing this variable. The backend must allow the Vercel site origin through its CORS configuration.
-
-The interface is currently scoped to the Winter Quarter 2027 catalog. Recommendation requests send the selected GE, units, course level, subject, and completed courses to the backend and render only its ranked results. If the backend returns no recommendations, the UI shows a no-matches message rather than inventing fallback results.
-
 ## Getting Started
 
 First, run the development server:
