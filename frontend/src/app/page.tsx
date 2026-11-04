@@ -29,6 +29,7 @@ type RecommendationRequest = {
   top_k: number;
   remaining_ge?: string[];
   completed_courses?: string[];
+  course_level?: 'undergraduate' | 'lower' | 'upper' | 'graduate';
 };
 
 type CatalogCourse = {
@@ -48,6 +49,33 @@ type AppliedFilters = {
   completedCodes: string[];
 };
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8000';
+
+function getRecommendationExplanation(recommendation: Recommendation) {
+  const allReasons = recommendation.reasons ?? [];
+  const reasons = allReasons.filter(
+    (reason) => !reason.startsWith('Satisfies ') && reason !== 'No prerequisites'
+  );
+  if (reasons.length > 0) return reasons.join(' ');
+  if (allReasons.length > 0) return '';
+  return recommendation.course.description || 'Matches your academic interests and constraints.';
+}
+
+function getCourseLevel(studentLevel: string): NonNullable<RecommendationRequest['course_level']> | undefined {
+  switch (studentLevel) {
+    case 'Any':
+      return 'undergraduate';
+    case 'Lower division undergraduate':
+      return 'lower';
+    case 'Upper division undergraduate':
+      return 'upper';
+    case 'Graduate':
+      return 'graduate';
+    default:
+      return undefined;
+  }
+}
+
 const GE_ABBREVIATIONS: Record<string, string> = {
   'Arts & Humanities': 'AH',
   'Science & Engineering': 'SE',
@@ -63,11 +91,12 @@ const GE_ABBREVIATIONS: Record<string, string> = {
 };
 
 function matchesStudentLevel(courseCode: string, studentLevel: string) {
-  if (studentLevel === 'Any') return true;
+  if (!studentLevel) return false;
 
   const courseNumber = Number(courseCode.trim().split(/\s+/)[1]?.match(/^\d+/)?.[0]);
   if (!Number.isFinite(courseNumber)) return false;
 
+  if (studentLevel === 'Any') return courseNumber >= 1 && courseNumber < 200;
   if (studentLevel === 'Lower division undergraduate') {
     return courseNumber >= 1 && courseNumber < 100;
   }
@@ -130,7 +159,7 @@ function CourseCard({ title, rank, explanation, units, prerequisites, geCategori
             {units} Units
           </span>
         </div>
-        <p className="text-gray-600 leading-relaxed text-sm">{explanation}</p>
+        {explanation && <p className="text-gray-600 leading-relaxed text-sm">{explanation}</p>}
         <div className="mt-4">
           <h5 className="text-sm font-bold text-gray-800">GE fulfilled</h5>
           <p className="mt-1 text-sm text-gray-600">
@@ -155,7 +184,7 @@ export default function Home() {
   const [interests, setInterests] = useState('');
   const [ge, setGe] = useState('Any');
   const [units, setUnits] = useState('Any');
-  const [studentLevel, setStudentLevel] = useState('Any');
+  const [studentLevel, setStudentLevel] = useState('');
   const [coursePrefix, setCoursePrefix] = useState('');
   const [coursePrefixes, setCoursePrefixes] = useState<string[]>([]);
   const [catalogCourses, setCatalogCourses] = useState<CatalogCourse[]>([]);
@@ -166,7 +195,7 @@ export default function Home() {
   const [appliedFilters, setAppliedFilters] = useState<AppliedFilters>({
     ge: 'Any',
     units: 'Any',
-    studentLevel: 'Any',
+    studentLevel: '',
     coursePrefix: '',
     completedCodes: [],
   });
@@ -182,7 +211,7 @@ export default function Home() {
         let offset = 0;
 
         while (true) {
-          const response = await fetch(`http://localhost:8000/courses/?limit=${pageSize}&offset=${offset}`);
+          const response = await fetch(`${API_BASE_URL}/api/courses/?limit=${pageSize}&offset=${offset}`);
           if (!response.ok) {
             throw new Error(`Could not load courses (${response.status}).`);
           }
@@ -228,16 +257,18 @@ export default function Home() {
     try {
       const payload: RecommendationRequest = {
         interests: interests.trim(),
-        top_k: 20
+        top_k: 20,
       };
 
       // Keys must match StudentProfile in backend/app/schemas/recommend.py
+      const courseLevel = getCourseLevel(studentLevel);
+      if (courseLevel) payload.course_level = courseLevel;
       if (ge !== 'Any') payload.remaining_ge = [ge];
       if (completed.trim() !== '') {
         payload.completed_courses = completed.split(',').map((c) => c.trim()).filter(Boolean);
       }
 
-      const response = await fetch('http://localhost:8000/recommend/', {
+      const response = await fetch(`${API_BASE_URL}/api/recommend/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -326,13 +357,32 @@ export default function Home() {
                   <textarea 
                     id="academic-interests"
                     required
-                    rows={4}
-                    className="min-h-24 w-full rounded-xl border border-gray-300 bg-white p-2.5 text-sm leading-5 focus:border-[#B3A369] focus:ring-2 focus:ring-[#B3A369]/50 outline-none transition-all resize-y"
+                    rows={3}
+                    className="min-h-20 w-full rounded-xl border border-gray-300 bg-white p-2.5 text-sm leading-5 focus:border-[#B3A369] focus:ring-2 focus:ring-[#B3A369]/50 outline-none transition-all resize-y"
                     placeholder="For example: I need an Arts & Humanities GE, enjoy psychology and movies, and want a class with few prerequisites."
                     value={interests}
                     onChange={(e) => setInterests(e.target.value)}
                   />
                 </div>
+              </div>
+
+              <div className="flex items-center gap-2 rounded-xl border border-[#B3A369]/60 bg-amber-50/70 p-2">
+                <label htmlFor="student-level" className="shrink-0 text-xs font-bold text-gray-800">
+                  Student Level <span className="text-red-600" aria-label="required">*</span>
+                </label>
+                <select
+                  id="student-level"
+                  required
+                  className="min-w-0 flex-1 rounded-lg border border-gray-200 bg-white p-2 text-xs focus:border-[#B3A369] focus:ring-2 focus:ring-[#B3A369]/50 outline-none cursor-pointer"
+                  value={studentLevel}
+                  onChange={(e) => setStudentLevel(e.target.value)}
+                >
+                  <option value="" disabled>Please select a level</option>
+                  <option value="Any">All undergraduate courses</option>
+                  <option value="Lower division undergraduate">Lower division undergraduate (001–099)</option>
+                  <option value="Upper division undergraduate">Upper division undergraduate (100–199)</option>
+                  <option value="Graduate">Graduate (200+)</option>
+                </select>
               </div>
 
               <div className="grid grid-cols-2 content-start gap-2">
@@ -375,21 +425,6 @@ export default function Home() {
                     <option value="4">4 Units</option>
                     <option value="5">5 Units</option>
                     <option value="6">6 Units</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label htmlFor="student-level" className="mb-1 block text-xs font-bold text-gray-700">Student Level</label>
-                  <select
-                    id="student-level"
-                    className="w-full rounded-lg border border-gray-200 bg-gray-50 p-2 text-xs focus:bg-white focus:ring-2 focus:ring-[#B3A369]/50 outline-none cursor-pointer"
-                    value={studentLevel}
-                    onChange={(e) => setStudentLevel(e.target.value)}
-                  >
-                    <option value="Any">Any level</option>
-                    <option value="Lower division undergraduate">Lower division undergraduate (001–099)</option>
-                    <option value="Upper division undergraduate">Upper division undergraduate (100–199)</option>
-                    <option value="Graduate">Graduate (200+)</option>
                   </select>
                 </div>
 
@@ -497,7 +532,7 @@ export default function Home() {
                   key={rec.course?.course_code ?? index}
                   rank={index + 1}
                   title={rec.course ? `${rec.course.course_code}: ${rec.course.title}` : "Course Title"}
-                  explanation={rec.reasons?.join(' ') || rec.course?.description || "Matches your academic interests and constraints."}
+                  explanation={getRecommendationExplanation(rec)}
                   units={rec.course?.units ?? appliedFilters.units}
                   prerequisites={rec.course?.prerequisites ?? ''}
                   geCategories={rec.course?.ge_categories ?? []}

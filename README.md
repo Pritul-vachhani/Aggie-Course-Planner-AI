@@ -349,6 +349,8 @@ Possible options:
 - Railway
 - AWS
 
+For the configured free public Render deployment, see [DEPLOYMENT.md](./DEPLOYMENT.md).
+
 ---
 
 # Possible Data Structure

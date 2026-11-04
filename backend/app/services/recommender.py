@@ -2,7 +2,7 @@ import re
 import sys
 from functools import lru_cache
 
-import pandas as pd
+import numpy as np
 
 from app.config import REPO_ROOT
 from app.services.catalog import GE_CATEGORIES, load_catalog, normalize_code
@@ -13,7 +13,12 @@ from Recomend_system import CourseRecommender  # noqa: E402
 
 GE_CODES = {name: code for code, name in GE_CATEGORIES.items()}  # "Arts & Humanities" -> "AH"
 UNITS_PATTERN = re.compile(r"^(\d+(?:\.\d+)?)(?:\s*-\s*(\d+(?:\.\d+)?))?$")
-LEVELS = {"lower": (1, 99), "upper": (100, 199), "graduate": (200, 999)}
+LEVELS = {
+    "undergraduate": (1, 199),
+    "lower": (1, 99),
+    "upper": (100, 199),
+    "graduate": (200, 999),
+}
 
 
 def _units_range(units: str) -> tuple[float, float] | None:
@@ -31,24 +36,27 @@ def _units_average(units: str) -> float | None:
     return sum(units_range) / 2 if units_range else None
 
 
-def _to_dataframe(catalog: dict[str, dict]) -> pd.DataFrame:
-    return pd.DataFrame([
-        {
-            "course_code": c["course_code"],
-            "title": c["title"],
-            "description": c["description"],
-            "ge_codes": [GE_CODES[name] for name in c["ge_categories"]],
-            "prereq_text": c["prerequisites"],
-            "units_average": _units_average(c["units"]),
-        }
-        for c in catalog.values()
-    ])
+def _to_model_data(catalog: dict[str, dict]) -> dict[str, np.ndarray]:
+    courses = list(catalog.values())
+    ge_codes = np.empty(len(courses), dtype=object)
+    ge_codes[:] = [[GE_CODES[name] for name in course["ge_categories"]] for course in courses]
+    return {
+        "course_code": np.asarray([course["course_code"] for course in courses]),
+        "title": np.asarray([course["title"] for course in courses]),
+        "description": np.asarray([course["description"] for course in courses]),
+        "ge_codes": ge_codes,
+        "prereq_text": np.asarray([course["prerequisites"] for course in courses]),
+        "units_average": np.asarray([
+            average if (average := _units_average(course["units"])) is not None else np.nan
+            for course in courses
+        ], dtype=np.float32),
+    }
 
 
 @lru_cache(maxsize=1)
 def get_model() -> CourseRecommender:
-    """Build Miles's model once. Embeds every course, so the first call is slow."""
-    return CourseRecommender(_to_dataframe(load_catalog()))
+    """Build Miles's model once and embed the catalog for semantic search."""
+    return CourseRecommender(_to_model_data(load_catalog()))
 
 
 def _matches_level(course: dict, level: str | None) -> bool:
@@ -94,7 +102,7 @@ def get_recommendations(profile) -> list[dict]:
         ge_category=[GE_CODES[name] for name in profile.remaining_ge],
         prereqs=profile.completed_courses,
         subject=profile.subject,
-        top_n=len(model.data),  # rank everything, then filter below
+        top_n=len(model.data["course_code"]),  # rank everything, then filter below
     )
 
     catalog = load_catalog()
