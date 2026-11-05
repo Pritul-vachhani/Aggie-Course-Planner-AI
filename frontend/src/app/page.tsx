@@ -4,7 +4,9 @@ import { useState } from 'react';
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ??
-  (process.env.NODE_ENV === 'production' ? '/api' : 'http://localhost:8000');
+  (process.env.NODE_ENV === 'production'
+    ? 'https://aggie-course-planner-ai-jrvo.onrender.com'
+    : 'http://localhost:8000');
 const API_URL = API_BASE_URL.replace(/\/+$/, '');
 
 type CourseCardProps = {
