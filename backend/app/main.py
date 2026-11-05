@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.config import FRONTEND_ORIGIN
+from app.config import FRONTEND_ORIGINS
 from app.routes import courses, recommend
 from app.services.recommender import get_model
 
@@ -17,7 +17,7 @@ app = FastAPI(title="AggieAI API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[FRONTEND_ORIGIN],
+    allow_origins=FRONTEND_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )

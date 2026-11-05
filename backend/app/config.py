@@ -8,8 +8,21 @@ load_dotenv()
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 LLM_API_KEY = os.getenv("LLM_API_KEY", "")
-FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "http://localhost:3000")
 
-# Relative paths are resolved from the repo root
-_catalog = Path(os.getenv("CATALOG_PATH", "testing/catalog.json"))
-CATALOG_PATH = _catalog if _catalog.is_absolute() else REPO_ROOT / _catalog
+# One site, or several separated by commas (e.g. localhost and the Vercel site)
+FRONTEND_ORIGINS = [
+    origin.strip().rstrip("/")
+    for origin in os.getenv("FRONTEND_ORIGIN", "http://localhost:3000").split(",")
+    if origin.strip()
+]
+
+
+def _repo_path(env_name: str, default: str) -> Path:
+    """Relative paths are resolved from the repo root."""
+    path = Path(os.getenv(env_name, default))
+    return path if path.is_absolute() else REPO_ROOT / path
+
+
+# WQ 27 data
+CATALOG_PATH = _repo_path("CATALOG_PATH", "clean/schedule_202701.json")
+PREREQS_PATH = _repo_path("PREREQS_PATH", "clean/prereqs_202701.json")
