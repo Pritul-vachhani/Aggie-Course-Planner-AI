@@ -20,10 +20,12 @@ class LightweightSentenceTransformer:
     """
 
     def __init__(self, model_name: str):
-        self._model = TextEmbedding(f"sentence-transformers/{model_name}")
+        # One thread: the free instance only has a fraction of a CPU anyway
+        self._model = TextEmbedding(f"sentence-transformers/{model_name}", threads=1)
 
     def encode(self, texts: list[str]) -> np.ndarray:
-        return np.array(list(self._model.embed(list(texts))))
+        # Small batches keep peak memory low (fastembed's default is 256 at once)
+        return np.array(list(self._model.embed(list(texts), batch_size=8)))
 
 
 def _import_course_recommender():
