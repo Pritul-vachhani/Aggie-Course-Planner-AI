@@ -1,11 +1,36 @@
 import re
 import sys
+import types
 from functools import lru_cache
 
+import numpy as np
 import pandas as pd
+from fastembed import TextEmbedding
 
 from app.config import REPO_ROOT
 from app.services.catalog import GE_CATEGORIES, load_catalog, normalize_code
+
+
+class LightweightSentenceTransformer:
+    """Runs the same all-MiniLM-L6-v2 model with ONNX instead of PyTorch.
+
+    PyTorch alone needs more memory than Render's free 512 MB instance has,
+    so this stands in for sentence_transformers.SentenceTransformer with the
+    same encode() interface. Miles's file stays unchanged.
+    """
+
+    def __init__(self, model_name: str):
+        self._model = TextEmbedding(f"sentence-transformers/{model_name}")
+
+    def encode(self, texts: list[str]) -> np.ndarray:
+        return np.array(list(self._model.embed(list(texts))))
+
+
+# Make "from sentence_transformers import SentenceTransformer" in Miles's
+# file pick up the lightweight version.
+_shim = types.ModuleType("sentence_transformers")
+_shim.SentenceTransformer = LightweightSentenceTransformer
+sys.modules["sentence_transformers"] = _shim
 
 # Miles's model lives at the repo root (Recomend_system.py)
 sys.path.append(str(REPO_ROOT))
