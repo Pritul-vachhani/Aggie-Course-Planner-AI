@@ -26,15 +26,23 @@ class LightweightSentenceTransformer:
         return np.array(list(self._model.embed(list(texts))))
 
 
-# Make "from sentence_transformers import SentenceTransformer" in Miles's
-# file pick up the lightweight version.
-_shim = types.ModuleType("sentence_transformers")
-_shim.SentenceTransformer = LightweightSentenceTransformer
-sys.modules["sentence_transformers"] = _shim
+def _import_course_recommender():
+    sys.path.append(str(REPO_ROOT))  # Miles's file lives at the repo root
+    previous = sys.modules.get("sentence_transformers")
+    shim = types.ModuleType("sentence_transformers")
+    shim.SentenceTransformer = LightweightSentenceTransformer
+    sys.modules["sentence_transformers"] = shim
+    try:
+        import Recomend_system
+    finally:
+        if previous is None:
+            sys.modules.pop("sentence_transformers", None)
+        else:
+            sys.modules["sentence_transformers"] = previous
+    Recomend_system.SentenceTransformer = LightweightSentenceTransformer
+    return Recomend_system.CourseRecommender
 
-# Miles's model lives at the repo root (Recomend_system.py)
-sys.path.append(str(REPO_ROOT))
-from Recomend_system import CourseRecommender  # noqa: E402
+CourseRecommender = _import_course_recommender()
 
 GE_CODES = {name: code for code, name in GE_CATEGORIES.items()}  # "Arts & Humanities" -> "AH"
 UNITS_PATTERN = re.compile(r"^(\d+(?:\.\d+)?)(?:\s*-\s*(\d+(?:\.\d+)?))?$")
@@ -71,7 +79,7 @@ def _to_dataframe(catalog: dict[str, dict]) -> pd.DataFrame:
 
 
 @lru_cache(maxsize=1)
-def get_model() -> CourseRecommender:
+def get_model():
     """Build Miles's model once. Embeds every course, so the first call is slow."""
     return CourseRecommender(_to_dataframe(load_catalog()))
 
