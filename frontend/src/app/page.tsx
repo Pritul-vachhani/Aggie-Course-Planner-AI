@@ -128,7 +128,7 @@ export default function Home() {
       const requestTimeout = setTimeout(() => controller.abort(), 300_000);
       let response: Response;
       try {
-        response = await fetch(`${API_URL}/recommend/`, {
+        response = await fetch(`https://aggie-course-planner-ai-jrvo.onrender.com/recommend/`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
