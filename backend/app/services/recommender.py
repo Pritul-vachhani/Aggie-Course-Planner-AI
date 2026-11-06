@@ -1,15 +1,50 @@
 import re
 import sys
+import types
 from functools import lru_cache
 
+import numpy as np
 import pandas as pd
+from fastembed import TextEmbedding
 
 from app.config import REPO_ROOT
 from app.services.catalog import GE_CATEGORIES, load_catalog, normalize_code
 
-# Miles's model lives at the repo root (Recomend_system.py)
-sys.path.append(str(REPO_ROOT))
-from Recomend_system import CourseRecommender  # noqa: E402
+
+class LightweightSentenceTransformer:
+    """Runs the same all-MiniLM-L6-v2 model with ONNX instead of PyTorch.
+
+    PyTorch alone needs more memory than Render's free 512 MB instance has,
+    so this stands in for sentence_transformers.SentenceTransformer with the
+    same encode() interface. Miles's file stays unchanged.
+    """
+
+    def __init__(self, model_name: str):
+        # One thread: the free instance only has a fraction of a CPU anyway
+        self._model = TextEmbedding(f"sentence-transformers/{model_name}", threads=1)
+
+    def encode(self, texts: list[str]) -> np.ndarray:
+        # Small batches keep peak memory low (fastembed's default is 256 at once)
+        return np.array(list(self._model.embed(list(texts), batch_size=8)))
+
+
+def _import_course_recommender():
+    sys.path.append(str(REPO_ROOT))  # Miles's file lives at the repo root
+    previous = sys.modules.get("sentence_transformers")
+    shim = types.ModuleType("sentence_transformers")
+    shim.SentenceTransformer = LightweightSentenceTransformer
+    sys.modules["sentence_transformers"] = shim
+    try:
+        import Recomend_system
+    finally:
+        if previous is None:
+            sys.modules.pop("sentence_transformers", None)
+        else:
+            sys.modules["sentence_transformers"] = previous
+    Recomend_system.SentenceTransformer = LightweightSentenceTransformer
+    return Recomend_system.CourseRecommender
+
+CourseRecommender = _import_course_recommender()
 
 GE_CODES = {name: code for code, name in GE_CATEGORIES.items()}  # "Arts & Humanities" -> "AH"
 UNITS_PATTERN = re.compile(r"^(\d+(?:\.\d+)?)(?:\s*-\s*(\d+(?:\.\d+)?))?$")
@@ -46,7 +81,7 @@ def _to_dataframe(catalog: dict[str, dict]) -> pd.DataFrame:
 
 
 @lru_cache(maxsize=1)
-def get_model() -> CourseRecommender:
+def get_model():
     """Build Miles's model once. Embeds every course, so the first call is slow."""
     return CourseRecommender(_to_dataframe(load_catalog()))
 

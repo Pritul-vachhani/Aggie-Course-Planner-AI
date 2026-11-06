@@ -2,10 +2,7 @@ import json
 import re
 from functools import lru_cache
 
-from app.config import CATALOG_PATH
-
-ENDED_MARKER = "This version has ended; see updated course, below."
-GE_PATTERN = re.compile(r"General Education:\s*(.*?)\.(?:\n|$)")
+from app.config import CATALOG_PATH, PREREQS_PATH
 
 # GE categories, keyed by catalog abbreviation
 GE_CATEGORIES = {
@@ -22,12 +19,12 @@ GE_CATEGORIES = {
     "ACGH": "American Cultures, Governance, & History",
 }
 
-def _clean(text: str) -> str:
+CODE_PATTERN = re.compile(r"^([A-Za-z]+)(\d+)([A-Za-z]*)$")
+
+
+def _clean(text: str | None) -> str:
     """Scraped text uses non-breaking spaces in places; make them normal."""
     return (text or "").replace("\xa0", " ").strip()
-
-
-CODE_PATTERN = re.compile(r"^([A-Za-z]+)(\d+)([A-Za-z]*)$")
 
 
 def normalize_code(code: str) -> str:
@@ -49,45 +46,65 @@ def canonical_ge(label: str) -> str | None:
     return None
 
 
-def _parse_ge(details: str) -> list[str]:
-    match = GE_PATTERN.search(details or "")
-    if not match:
-        return []
-    text = match.group(1)
-    return [
-        name for code, name in GE_CATEGORIES.items()
-        if name in text or f"({code})" in text
-    ]
+def _format_units(low: float, high: float) -> str:
+    """(4, 4) -> '4', (1, 5) -> '1-5', (4.5, 4.5) -> '4.5'."""
+    return f"{low:g}" if low == high else f"{low:g}-{high:g}"
 
 
-def _to_course(raw: dict, department: str) -> dict:
-    """Convert one scraped course into the shape of our Course schema."""
+def _details(raw: dict, ge_names: list[str]) -> str:
+    """Extra info shown under "Course details" on the frontend."""
+    parts = []
+    if ge_names:
+        parts.append(f"General Education: {', '.join(ge_names)}.")
+    if raw.get("cross_listings"):
+        parts.append(f"Cross-listed with {', '.join(raw['cross_listings'])}.")
+    if raw.get("credit_limit_text"):
+        parts.append(_clean(raw["credit_limit_text"]))
+    return " ".join(parts)
+
+
+def _to_course(raw: dict, sections: list[dict], department: str, prereqs: str | None) -> dict:
+    """Convert one course from Jeremy's schedule into the shape of our Course schema."""
+    ge_names = [GE_CATEGORIES[code] for code in raw.get("ge_codes", []) if code in GE_CATEGORIES]
     return {
-        "course_code": _clean(raw["code"]),
+        "course_code": _clean(raw["course_code"]),
         "title": _clean(raw["title"]),
-        "description": _clean(raw["desc"].replace(ENDED_MARKER, "")),
-        "details": _clean(raw.get("details", "")),
-        "units": _clean(raw["units"]),
-        "prerequisites": _clean(raw["prereqs"]).rstrip("."),
-        "ge_categories": _parse_ge(_clean(raw.get("details", ""))),
-        "department": department,
+        "description": _clean(raw.get("description")),
+        "details": _details(raw, ge_names),
+        "units": _format_units(
+            min(s["units_min"] for s in sections),
+            max(s["units_max"] for s in sections),
+        ),
+        "prerequisites": _clean(prereqs).rstrip("."),
+        "ge_categories": ge_names,
+        "department": _clean(department),
     }
 
 
 @lru_cache(maxsize=1)
 def load_catalog() -> dict[str, dict]:
-    """Load the catalog once and index it by normalized course code."""
+    """Load the Winter 2027 schedule once and index it by normalized course code.
+
+    Courses whose sections are all placeholders (special study, internships,
+    research units arranged with a department) aren't open for regular
+    enrollment, so they're left out.
+    """
     with open(CATALOG_PATH, encoding="utf-8") as f:
-        subjects = json.load(f)
+        schedule = json.load(f)
+    with open(PREREQS_PATH, encoding="utf-8") as f:
+        prereqs = json.load(f)
 
     catalog: dict[str, dict] = {}
-    for subject in subjects:
-        for raw in subject["courses"]:
-            course = _to_course(raw, subject["subj"])
-            key = normalize_code(course["course_code"])
-            if key in catalog and ENDED_MARKER in raw["desc"]:
-                continue  # keep the current version over an ended one
-            catalog[key] = course
+    for subject in schedule.values():
+        for raw in subject["courses"].values():
+            sections = [s for s in raw["sections"].values() if not s["is_placeholder"]]
+            if not sections:
+                continue
+            code = _clean(raw["course_code"])
+            # Prerequisites in effect for Winter 2027; fall back to the schedule's own text
+            prereq = prereqs.get(code) or raw.get("prereq_text")
+            course = _to_course(raw, sections, subject["name"], prereq)
+            catalog[normalize_code(code)] = course
     return catalog
 
 
