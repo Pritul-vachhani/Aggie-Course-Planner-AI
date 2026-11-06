@@ -14,3 +14,6 @@ API docs: http://localhost:8000/docs
 
 ## Setup
 Copy `.env.example` to `.env` and fill in values.
+
+## Deployment CORS
+Vercel production and preview domains ending in `.vercel.app` are allowed automatically. If the frontend uses a custom domain, set `FRONTEND_ORIGIN` on the backend to that exact origin (scheme and hostname, with no trailing slash), then redeploy the backend.

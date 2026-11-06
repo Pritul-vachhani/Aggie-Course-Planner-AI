@@ -18,6 +18,7 @@ app = FastAPI(title="AggieAI API", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[FRONTEND_ORIGIN],
+    allow_origin_regex=r"https://([a-zA-Z0-9-]+\.)*vercel\.app",
     allow_methods=["*"],
     allow_headers=["*"],
 )
