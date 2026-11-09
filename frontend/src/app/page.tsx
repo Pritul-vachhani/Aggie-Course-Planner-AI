@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ??
@@ -38,8 +38,8 @@ type RecommendationRequest = {
   course_level: CourseLevel;
   remaining_ge?: string[];
   preferred_units?: number;
+  minimum_units?: number;
   subject?: string;
-  completed_courses?: string[];
 };
 
 type CourseLevel = 'undergraduate' | 'lower' | 'upper' | 'graduate';
@@ -94,13 +94,55 @@ export default function Home() {
   const [units, setUnits] = useState('Any');
   const [studentLevel, setStudentLevel] = useState<CourseLevel | ''>('');
   const [coursePrefix, setCoursePrefix] = useState('');
-  const [completed, setCompleted] = useState('');
+  const [coursePrefixes, setCoursePrefixes] = useState<string[]>([]);
+  const [coursePrefixError, setCoursePrefixError] = useState('');
 
   // Results State
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    const fetchCoursePrefixes = async () => {
+      try {
+        const courses: { course_code: string }[] = [];
+        const pageSize = 500;
+        let offset = 0;
+
+        while (true) {
+          const response = await fetch(
+            `${API_URL}/courses/?limit=${pageSize}&offset=${offset}`,
+            { signal: controller.signal }
+          );
+          if (!response.ok) {
+            throw new Error(`Could not load course prefixes (${response.status}).`);
+          }
+
+          const page: { course_code: string }[] = await response.json();
+          courses.push(...page);
+          if (page.length < pageSize) break;
+          offset += pageSize;
+        }
+
+        const prefixes = new Set(
+          courses
+            .map((course) => course.course_code.trim().match(/^([A-Za-z]{3})\b/)?.[1].toUpperCase())
+            .filter((prefix): prefix is string => Boolean(prefix))
+        );
+        setCoursePrefixes([...prefixes].sort());
+      } catch (err) {
+        if (!controller.signal.aborted) {
+          setCoursePrefixError(err instanceof Error ? err.message : 'Could not load course prefixes.');
+        }
+      }
+    };
+
+    void fetchCoursePrefixes();
+    return () => controller.abort();
+  }, []);
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -120,11 +162,12 @@ export default function Home() {
 
       // Keys must match StudentProfile in backend/app/schemas/recommend.py
       if (ge !== 'Any') payload.remaining_ge = [ge];
-      if (units !== 'Any') payload.preferred_units = Number(units);
-      if (coursePrefix.trim()) payload.subject = coursePrefix.trim().toUpperCase();
-      if (completed.trim() !== '') {
-        payload.completed_courses = completed.split(',').map((c) => c.trim()).filter(Boolean);
+      if (units === '5+') {
+        payload.minimum_units = 5;
+      } else if (units !== 'Any') {
+        payload.preferred_units = Number(units);
       }
+      if (coursePrefix.trim()) payload.subject = coursePrefix.trim().toUpperCase();
 
       const controller = new AbortController();
       const requestTimeout = setTimeout(() => controller.abort(), 300_000);
@@ -227,73 +270,83 @@ export default function Home() {
                 </select>
               </div>
 
-              <div className="grid grid-cols-2 content-start gap-2">
-                <h3 className="col-span-2 rounded-xl bg-gradient-to-r from-[#022851] via-[#064477] to-[#B3A369] px-3 py-1.5 text-sm font-bold tracking-wide text-white shadow-md">
-                  Advanced filters
-                </h3>
-
-                <div>
-                  <label className="mb-1 block text-xs font-bold text-gray-700">Target GE</label>
-                  <select 
-                    className="w-full rounded-lg border border-gray-200 bg-gray-50 p-2 text-xs focus:bg-white focus:ring-2 focus:ring-[#B3A369]/50 outline-none cursor-pointer"
-                    value={ge}
-                    onChange={(e) => setGe(e.target.value)}
-                  >
-                    <option value="Any">Any GE</option>
-                    <option value="Arts & Humanities">Arts & Humanities (AH)</option>
-                    <option value="Science & Engineering">Science & Engineering (SE)</option>
-                    <option value="Social Sciences">Social Sciences (SS)</option>
-                    <option value="American Cultures, Governance, & History">American Cultures, Governance, & History (ACGH)</option>
-                    <option value="Domestic Diversity">Domestic Diversity (DD)</option>
-                    <option value="Oral Skills">Oral Skills (OL)</option>
-                    <option value="Quantitative Literacy">Quantitative Literacy (QL)</option>
-                    <option value="Scientific Literacy">Scientific Literacy (SL)</option>
-                    <option value="Visual Literacy">Visual Literacy (VL)</option>
-                    <option value="World Cultures">World Cultures (WC)</option>
-                    <option value="Writing Experience">Writing Experience (WE)</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-bold text-gray-700">Units</label>
-                  <select 
-                    className="w-full rounded-lg border border-gray-200 bg-gray-50 p-2 text-xs focus:bg-white focus:ring-2 focus:ring-[#B3A369]/50 outline-none cursor-pointer"
-                    value={units}
-                    onChange={(e) => setUnits(e.target.value)}
-                  >
-                    <option value="Any">Any</option>
-                    <option value="1">1 Unit</option>
-                    <option value="2">2 Units</option>
-                    <option value="3">3 Units</option>
-                    <option value="4">4 Units</option>
-                    <option value="5">5 Units</option>
-                    <option value="6">6 Units</option>
-                  </select>
+              <section aria-labelledby="advanced-filters-heading" className="rounded-2xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-2 shadow-sm">
+                <div className="mb-2 rounded-lg bg-gradient-to-r from-[#022851] via-[#064477] to-[#B3A369] px-2.5 py-1.5">
+                  <h3 id="advanced-filters-heading" className="text-sm font-bold text-white">
+                    Advanced filters
+                  </h3>
                 </div>
 
-                <div>
-                  <label htmlFor="course-prefix" className="mb-1 block text-xs font-bold text-gray-700">Course Prefix</label>
-                  <input
-                    id="course-prefix"
-                    maxLength={3}
-                    autoCapitalize="characters"
-                    className="w-full rounded-lg border border-gray-200 bg-gray-50 p-2 text-xs uppercase focus:bg-white focus:ring-2 focus:ring-[#B3A369]/50 outline-none"
-                    placeholder="e.g., ECS"
-                    value={coursePrefix}
-                    onChange={(e) => setCoursePrefix(e.target.value.replace(/[^a-z]/gi, '').slice(0, 3).toUpperCase())}
-                  />
-                </div>
+                <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+                  <div className="rounded-xl border border-slate-200 bg-white p-2 sm:col-span-2">
+                    <label htmlFor="target-ge" className="mb-1 block text-xs font-semibold text-gray-700">
+                      Target GE
+                    </label>
+                    <select
+                      id="target-ge"
+                      className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs text-gray-800 outline-none transition focus:border-[#B3A369] focus:bg-white focus:ring-2 focus:ring-[#B3A369]/30 cursor-pointer"
+                      value={ge}
+                      onChange={(e) => setGe(e.target.value)}
+                    >
+                      <option value="Any">Any GE</option>
+                      <option value="Arts & Humanities">Arts & Humanities (AH)</option>
+                      <option value="Science & Engineering">Science & Engineering (SE)</option>
+                      <option value="Social Sciences">Social Sciences (SS)</option>
+                      <option value="American Cultures, Governance, & History">American Cultures, Governance, & History (ACGH)</option>
+                      <option value="Domestic Diversity">Domestic Diversity (DD)</option>
+                      <option value="Oral Skills">Oral Skills (OL)</option>
+                      <option value="Quantitative Literacy">Quantitative Literacy (QL)</option>
+                      <option value="Scientific Literacy">Scientific Literacy (SL)</option>
+                      <option value="Visual Literacy">Visual Literacy (VL)</option>
+                      <option value="World Cultures">World Cultures (WC)</option>
+                      <option value="Writing Experience">Writing Experience (WE)</option>
+                    </select>
+                  </div>
 
-                <div className="min-w-0">
-                  <label className="mb-1 block text-xs font-bold text-gray-700">Completed Prerequisites</label>
-                  <input 
-                    type="text"
-                    className="w-full rounded-lg border border-gray-200 bg-gray-50 p-2 text-xs focus:bg-white focus:ring-2 focus:ring-[#B3A369]/50 outline-none"
-                    placeholder="e.g., ECS 032A, MAT 021A"
-                    value={completed}
-                    onChange={(e) => setCompleted(e.target.value)}
-                  />
+                  <div className="rounded-xl border border-slate-200 bg-white p-2">
+                    <label htmlFor="course-units" className="mb-1 block text-xs font-semibold text-gray-700">
+                      Units
+                    </label>
+                    <select
+                      id="course-units"
+                      className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs text-gray-800 outline-none transition focus:border-[#B3A369] focus:bg-white focus:ring-2 focus:ring-[#B3A369]/30 cursor-pointer"
+                      value={units}
+                      onChange={(e) => setUnits(e.target.value)}
+                    >
+                      <option value="Any">Any</option>
+                      <option value="1">1 Unit</option>
+                      <option value="2">2 Units</option>
+                      <option value="3">3 Units</option>
+                      <option value="4">4 Units</option>
+                      <option value="5+">5+ Units</option>
+                    </select>
+                  </div>
+
+                  <div className="rounded-xl border border-slate-200 bg-white p-2">
+                    <label htmlFor="course-prefix" className="mb-1 block text-xs font-semibold text-gray-700">
+                      Course prefix
+                    </label>
+                    <input
+                      id="course-prefix"
+                      list="course-prefix-options"
+                      maxLength={3}
+                      autoCapitalize="characters"
+                      className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs uppercase text-gray-800 outline-none transition placeholder:normal-case placeholder:text-gray-400 focus:border-[#B3A369] focus:bg-white focus:ring-2 focus:ring-[#B3A369]/30"
+                      placeholder="Any prefix"
+                      value={coursePrefix}
+                      onChange={(e) => setCoursePrefix(e.target.value.replace(/[^a-z]/gi, '').slice(0, 3).toUpperCase())}
+                    />
+                    <datalist id="course-prefix-options">
+                      {coursePrefixes.map((prefix) => (
+                        <option key={prefix} value={prefix} />
+                      ))}
+                    </datalist>
+                    {coursePrefixError && (
+                      <p className="mt-1 text-xs text-red-600" role="status">{coursePrefixError}</p>
+                    )}
+                  </div>
                 </div>
-              </div>
+              </section>
 
               <button
                 type="submit"
