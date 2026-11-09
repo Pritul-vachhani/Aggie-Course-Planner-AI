@@ -109,6 +109,10 @@ def _meets_filters(course: dict, profile) -> bool:
         units = _units_range(course["units"])
         if units is None or not units[0] <= profile.preferred_units <= units[1]:
             return False
+    if profile.minimum_units is not None:
+        units = _units_range(course["units"])
+        if units is None or units[1] < profile.minimum_units:
+            return False
     if profile.subject and not course["course_code"].upper().startswith(profile.subject):
         return False
     return _matches_level(course, profile.course_level)

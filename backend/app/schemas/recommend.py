@@ -13,6 +13,7 @@ class StudentProfile(BaseModel):
     # Filters: leave empty / null to mean "any"
     remaining_ge: List[str] = []
     preferred_units: Optional[int] = Field(default=None, ge=1)
+    minimum_units: Optional[int] = Field(default=None, ge=1)
     course_level: Optional[Literal["undergraduate", "lower", "upper", "graduate"]] = None
     subject: Optional[str] = None
 
