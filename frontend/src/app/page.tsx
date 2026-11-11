@@ -209,9 +209,26 @@ export default function Home() {
       {/* Header */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-          <h1 className="text-2xl font-black tracking-tight text-[#022851]">
-            Aggie<span className="text-[#B3A369]">AI</span>
-          </h1>
+          <div className="flex items-center gap-3">
+            <svg
+              aria-hidden="true"
+              className="h-10 w-10 shrink-0"
+              viewBox="0 0 48 48"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path d="M24 2 44 13.5v21L24 46 4 34.5v-21L24 2Z" fill="#022851" />
+              <path d="M24 9v6m0 0-9 5m9-5 9 5" stroke="#B3A369" strokeWidth="2" strokeLinecap="round" />
+              <circle cx="24" cy="9" r="2.5" fill="#B3A369" />
+              <circle cx="15" cy="20" r="2.5" fill="#B3A369" />
+              <circle cx="33" cy="20" r="2.5" fill="#B3A369" />
+              <path d="M10 28c5-2 10-1 14 2 4-3 9-4 14-2v9c-5-2-10-1-14 2-4-3-9-4-14-2v-9Z" fill="white" />
+              <path d="M24 30v9" stroke="#B3A369" strokeWidth="1.5" />
+            </svg>
+            <h1 className="text-2xl font-black tracking-tight text-[#022851]">
+              Aggie<span className="text-[#B3A369]">AI</span>
+            </h1>
+          </div>
           <span className="text-sm font-semibold text-gray-400 bg-gray-100 px-3 py-1 rounded-full">MVP v1.0</span>
         </div>
       </header>
